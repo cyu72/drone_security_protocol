@@ -1,0 +1,12 @@
+FROM alpine:latest
+
+WORKDIR /app
+
+COPY ./gcs/gcs.cpp .
+
+RUN apk --no-cache add g++ && \
+    g++ -o gcs gcs.cpp
+
+EXPOSE 65456
+
+CMD ["./gcs"]

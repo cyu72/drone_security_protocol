@@ -1,0 +1,33 @@
+version: '3'
+services:
+  drone1:
+    image: drone
+    environment:
+      PARAM1: drone1
+      PARAM2: 65456
+      PARAM3: 1
+    networks:
+      - AODV
+  
+  drone2:
+    image: drone
+    environment:
+      PARAM1: drone2
+      PARAM2: 65456
+      PARAM3: 2 
+    networks:
+      - AODV
+
+  drone3:
+    image: drone
+    environment:
+      PARAM1: drone3
+      PARAM2: 65456
+      PARAM3: 3
+    networks:
+      - AODV
+
+networks:
+  AODV:
+    name: AODV
+    external: true

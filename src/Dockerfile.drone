@@ -1,0 +1,16 @@
+FROM alpine:latest
+
+WORKDIR /app
+
+COPY . /app
+
+RUN apk --no-cache add g++ && \
+    cmake \
+    libgtest-dev \
+    cmake -S . -B build \
+    cmake --build build \
+    g++ -o drone drone.cpp drone_test.cpp
+
+EXPOSE 65456
+
+CMD ["./drone"]
