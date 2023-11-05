@@ -2,14 +2,16 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY . /app
+COPY ./src/drone /app
 
-RUN apk --no-cache add g++ && \
-    cmake \
-    libgtest-dev \
-    cmake -S . -B build \
-    cmake --build build \
-    g++ -o drone drone.cpp drone_test.cpp
+RUN apk --no-cache add g++ make cmake protobuf protobuf-dev gtest-dev
+    
+RUN cmake .
+
+RUN make
+
+# RUN g++ -o drone drone.cpp drone_test.cpp
+RUN g++ -o drone drone.cpp
 
 EXPOSE 65456
 

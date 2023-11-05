@@ -13,7 +13,9 @@ enum MESSAGE_TYPE {
     ROUTE_REQUEST,
     ROUTE_REPLY, 
     ROUTE_ERROR,
-    DATA
+    DATA,
+    INIT_ROUTE_DISCOVERY, // temp
+    NEIGHBOR_PING 
 };
 
 struct MESSAGE {
@@ -44,6 +46,7 @@ class drone {
         std::string addr;
         int port; // modify these values to fit sendto() function
         int nodeID;
+        std::vector<drone> neighbors; // each int represnets a droneID
 
         drone(){
             this->addr = -1;
@@ -57,11 +60,12 @@ class drone {
             this->nodeID = nodeID;
         }
 
+        void findNeighbors(int socket);
         void routeRequestHandler(MESSAGE& msg, const int& newSD);
         void routeReplyHandler(MESSAGE &msg, const int& newSD);
         void clientResponseThread(int newSD);
         void hostResponseThread(int newSD); // i dont remember what this was supposed to do
-        void initRouteDiscovery(const int& newSD, const int& srcNodeID, const int& destNodeID, std::vector<drone>& neighbors);
+        void initRouteDiscovery(const int& newSD, const int& srcNodeID, const int& destNodeID);
 
 };
 
