@@ -1,6 +1,9 @@
 version: '3'
 services:
   drone1:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.drone
     image: drone
     environment:
       PARAM1: drone1
@@ -10,6 +13,9 @@ services:
       - AODV
   
   drone2:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.drone
     image: drone
     environment:
       PARAM1: drone2
@@ -19,11 +25,24 @@ services:
       - AODV
 
   drone3:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.drone
     image: drone
     environment:
       PARAM1: drone3
       PARAM2: 65456
       PARAM3: 3
+    networks:
+      - AODV
+
+  groundControlService:
+    build:
+      context: ./src
+      dockerfile: Dockerfile.gcs
+    image: gcs
+    stdin_open: true  
+    tty: true  
     networks:
       - AODV
 
