@@ -2,7 +2,7 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY ./src/drone /app
+COPY drone /app
 
 RUN apk --no-cache add g++ make cmake protobuf protobuf-dev gtest-dev
     

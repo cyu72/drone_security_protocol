@@ -2,10 +2,11 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY ./gcs/gcs.cpp .
+COPY gcs /app
 
-RUN apk --no-cache add g++ && \
-    g++ -o gcs gcs.cpp
+RUN apk --no-cache add g++ 
+
+RUN g++ -o gcs gcs.cpp
 
 EXPOSE 65456
 

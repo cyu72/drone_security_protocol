@@ -16,10 +16,12 @@
 
 
 enum MESSAGE_TYPE {
-    ROUTE_REQUEST,
+    ROUTE_REQUEST = 0,
     ROUTE_REPLY, 
     ROUTE_ERROR,
     DATA,
+    INIT_ROUTE_DISCOVERY, // temp
+    NEIGHBOR_PING, // temp
     TEST
 };
 

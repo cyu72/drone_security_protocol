@@ -17,15 +17,13 @@ void clientThread(int newSD){
     }
 }
 
-void sendData(std::string containerName){
+void sendData(std::string containerName, MESSAGE& msg){
     // sends data to drone
     // create message, docker DNS resolution, then send to drone
-    MESSAGE msg;
-    msg.type = TEST;
-    struct addrinfo hints;
-    struct addrinfo* result;
+    struct addrinfo hints, *result;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET; // Use IPv4
+    hints.ai_socktype = SOCK_DGRAM;
     
     int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
     if (status != 0) {
@@ -40,11 +38,9 @@ void sendData(std::string containerName){
         return;
     }
 
-    int bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, result->ai_addr, result->ai_addrlen);
+    ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
     if (bytesSent == -1) {
         std::cerr << "Error: " << strerror(errno) << std::endl;
-    } else {
-        std::cout << "Sent " << bytesSent << " bytes to the container" << std::endl;
     }
 
     freeaddrinfo(result);
@@ -79,6 +75,7 @@ void initalizeServer(){
     while (true) {
         std::cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents " << std::endl; // tests built with assumptions made on # of drones & distances
         std::cin >> inn; 
+        MESSAGE msg;
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
         switch(inn){
             case 1:
@@ -86,11 +83,11 @@ void initalizeServer(){
                 // send route request
                 break;
             case 2:
-                std::cout << "Enter drone ID [number]: " << std::endl; // select which drone to send request to 
+                msg.type = TEST;
+                std::cout << "Enter drone ID [number]: "; // select which drone to send request to 
                 std::cin >> inn1;   
                 containerName = "drone_security_protocol-drone" + std::to_string(inn1) + "-1";
-                std::cout << containerName << std::endl;
-                sendData(containerName);
+                sendData(containerName, msg);
                 // send verify neighbors [temp: print out neighbor list for now]
                 break;
             case 3:
@@ -101,6 +98,7 @@ void initalizeServer(){
                 break;
         }       
         // wait for response from drone
+        std::memset(&msg, 0, sizeof(msg));
     }
 }
 

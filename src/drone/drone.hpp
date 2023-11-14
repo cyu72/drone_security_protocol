@@ -10,14 +10,16 @@
 #include <vector>
 
 enum MESSAGE_TYPE {
-    ROUTE_REQUEST,
+    ROUTE_REQUEST = 0,
     ROUTE_REPLY, 
     ROUTE_ERROR,
     DATA,
     INIT_ROUTE_DISCOVERY, // temp
-    NEIGHBOR_PING 
+    NEIGHBOR_PING, // temp
+    TEST
 };
 
+// using a generic message type for now
 struct MESSAGE {
     MESSAGE_TYPE type;
     int hopCount;
@@ -38,8 +40,6 @@ struct ROUTING_TABLE_ENTRY {
     int cost;
     int ttl;
 };
-
-std::string BROADCAST = "255.255.255.255";
 
 class drone {
     public: // everything public for now
@@ -63,7 +63,7 @@ class drone {
         void findNeighbors(int socket);
         void routeRequestHandler(MESSAGE& msg, const int& newSD);
         void routeReplyHandler(MESSAGE &msg, const int& newSD);
-        void clientResponseThread(int newSD);
+        void clientResponseThread(int newSD, MESSAGE &msg);
         void hostResponseThread(int newSD); // i dont remember what this was supposed to do
         void initRouteDiscovery(const int& newSD, const int& srcNodeID, const int& destNodeID);
 
