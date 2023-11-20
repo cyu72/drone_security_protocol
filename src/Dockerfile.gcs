@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY gcs /app
 
-RUN apk --no-cache add g++ 
+RUN apk add g++ 
 
 RUN g++ -o gcs gcs.cpp
 
