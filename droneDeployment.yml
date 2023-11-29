@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone1
+spec:
+  containers: 
+    - name: drone1
+      image: cyu72/drone:latest
+      env:
+      - name: PARAM1
+        value: "drone1"
+      - name: PARAM2
+        value: "65456"
+      - name: PARAM3
+        value: "1"
+      ports:
+      - protocol: UDP
+        containerPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone2
+spec:
+  containers: 
+    - name: drone2
+      image: cyu72/drone:latest
+      env:
+      - name: PARAM1
+        value: "drone2"
+      - name: PARAM2
+        value: "65456"
+      - name: PARAM3
+        value: "2"
+      ports:
+      - protocol: UDP
+        containerPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone3
+spec:
+  containers: 
+    - name: drone3
+      image: cyu72/drone:latest
+      env:
+      - name: PARAM1
+        value: "drone3"
+      - name: PARAM2
+        value: "65456"
+      - name: PARAM3
+        value: "3"
+      ports:
+      - protocol: UDP
+        containerPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gcs
+spec:
+  containers: 
+    - name: gcs
+      image: cyu72/gcs:test
+      stdin: true
+      tty: true
+      ports:
+      - protocol: UDP
+        containerPort: 65456

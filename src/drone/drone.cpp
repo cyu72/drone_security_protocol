@@ -10,7 +10,8 @@ void drone::clientResponseThread(int newSD, MESSAGE &msg){
             routeRequestHandler(msg, newSD);
             break;
         case ROUTE_REPLY:
-            // routeReplyHandler(msg, newSD);
+            // std::cout << "RREP recieved." << std::endl;
+            routeReplyHandler(msg, newSD);
             break;
         case ROUTE_ERROR:
             // routeErrorHandler(msg, newSD);
@@ -21,27 +22,21 @@ void drone::clientResponseThread(int newSD, MESSAGE &msg){
         case INIT_ROUTE_DISCOVERY:
             initRouteDiscovery(newSD, msg.srcID, msg.destID);
             break;
+        case EXIT:
+            std::exit(0); // temp, need to resolve mem leaks before actually closing
+            break;
         default:
             std::cout << "Message type not recognized." << std::endl; 
             break;
     }
 }
 
-void drone::initRouteDiscovery(const int& newSD, const int& srcNodeID, const int& destNodeID){
-    MESSAGE rreq;
-    rreq.type = ROUTE_REQUEST;
-    // how to init the RREQID?
-    rreq.srcID = srcNodeID;
-    rreq.srcSeqNum = 0;
-    rreq.destID = destNodeID;
-    rreq.destSeqNum = -1; // undefined until we get a reply
-    rreq.ttl = 1; // temp value
-
+int drone::broadcastMessage(const int& sockfd, const MESSAGE& msg){
     int broadcastEnable = 1;
-    if (setsockopt(newSD, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) == -1) {
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) == -1) {
         perror("setsockopt");
-        close(newSD);
-        return;
+        close(sockfd);
+        return 0;
     }
 
     struct sockaddr_in broadcastAddress;
@@ -50,56 +45,82 @@ void drone::initRouteDiscovery(const int& newSD, const int& srcNodeID, const int
     broadcastAddress.sin_port = htons(this->port);
     inet_pton(AF_INET, "172.18.255.255", &(broadcastAddress.sin_addr)); // TODO: Automate retrieving this docker network address
 
-    ssize_t bytesSent = sendto(newSD, &rreq, sizeof(rreq), 0, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress));
+    ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress));
     if (bytesSent == -1) {
         perror("sendto");
+        return 0;
     } else {
-        std::cout << "Sent " << bytesSent << " bytes to the broadcast address." << std::endl;
+        return 1;
     }
+    
+}
 
-    // add all resonses to neighbor list -> done in routeReplyHandler
+void drone::initRouteDiscovery(const int& newSD, const int& srcNodeID, const int& destNodeID){
+    MESSAGE rreq;
+    rreq.type = ROUTE_REQUEST;
+    // how to init the RREQID?
+    rreq.srcID = srcNodeID;
+    rreq.destID = destNodeID;
+    rreq.ttl = 1; // temp value
+
+    int res = this->broadcastMessage(newSD, rreq);
+    if (res == 0){
+        std::cerr << "Error broadcasting message." << std::endl;
+        return;
+    }
 }
 
 void drone::routeRequestHandler(MESSAGE& msg, const int& newSD){ 
-    // check if we just recieved a rreq from ourself
-    if (msg.srcID == this->nodeID){
-        return;
-    }
-
     struct sockaddr_in addr; // return address setup
     addr.sin_family = AF_INET;
     addr.sin_port = htons(this->port); 
-    addr.sin_addr.s_addr = inet_addr(msg.srcIP.c_str()); 
 
-    MESSAGE RREP, recievedMessage;
-    RREP.type = ROUTE_REPLY;
-    RREP.hopCount = msg.hopCount + 1; // leave other fields blank until we need to actually init them
-    // sends RREP with info on current drone, if we are the destination include that info as well
-    sendto(newSD, &RREP, sizeof(RREP), 0, (struct sockaddr*)&addr, sizeof(addr));
-
+    // check if we just recieved a rreq from ourself
+    if (msg.srcIP == this->nodeIP){
+        return;
+    }
+    // check if we've already seen this rreq, discard
+    if (this->RREQ_cache.count(msg.MAC) > 0){
+        return;
+    }
     // check if we are the destination
     if (msg.destID == this->nodeID){
         // if we are, send the message to the host
-
+        MESSAGE RREP;
+        RREP.type = ROUTE_REPLY;
+        RREP.srcID = this->nodeID;
+        RREP.destID = msg.srcID;
+        RREP.ttl = 1; // temp value
+        RREP.path = msg.path;
+        RREP.iteration = 0; // to mark where we are in the path
+        addr.sin_addr.s_addr = inet_addr(msg.path.back().c_str()); 
+        sendto(newSD, &RREP, sizeof(RREP), 0, (struct sockaddr*)&addr, sizeof(addr));
     }
-    // if not, send the message back down the chain
-    else {
-        // modify rrep fields as required and forward to neighbors
-        msg.hopCount++;
-        sendto(newSD, &msg, sizeof(msg), 0, (struct sockaddr*)&addr, sizeof(addr));
-    }
 
-    // modify rreq fields as required and forward to neighbors
-    msg.hopCount++;
-    sendto(newSD, &msg, sizeof(msg), 0, (struct sockaddr*)&addr, sizeof(addr));
+    // else rebroadcast
+    addr.sin_addr.s_addr = inet_addr(msg.srcIP.c_str()); 
+    msg.path.push_back(this->nodeIP); // add ourself to the path
+    RREQ_cache.insert(msg.MAC); // add the MAC to the cache
+    this->broadcastMessage(newSD, msg); // TODO: how to prevent rebroadcast back to the source node?
 }
 
 void drone::routeReplyHandler(MESSAGE& msg, const int& newSD){
-    // TODO: Prevent rebroadcast of RREP back to sender node 
-    // for each response, build the route, if we recieve the correct destination, delete the other routes and end the route discovery
-
-
     std::cout << "RREP recieved." << std::endl;
+    if (msg.destID == this->nodeID){
+        std::cout << "RREP recieved at destination." << std::endl;
+        return;
+    }
+    // check if we've already seen this rrep, discard
+    if (this->RREP_cache.count(msg.MAC) > 0){
+        return;
+    }
+
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(this->port); 
+    msg.iteration++;
+    addr.sin_addr.s_addr = inet_addr(msg.path[msg.path.size() - msg.iteration].c_str()); 
+    sendto(newSD, &msg, sizeof(msg), 0, (struct sockaddr*)&addr, sizeof(addr));
 }
 
 int main(int argc, char* argv[]) {

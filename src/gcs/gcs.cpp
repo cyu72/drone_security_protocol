@@ -17,6 +17,32 @@ void clientThread(int newSD){
     }
 }
 
+void exitHandler(MESSAGE& msg){
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        std::cerr << "Error in socket creation." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    int broadcastEnable = 1;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) == -1) {
+        perror("setsockopt");
+        close(sockfd);
+        return;
+    }
+
+    struct sockaddr_in broadcastAddress;
+    memset(&broadcastAddress, 0, sizeof(broadcastAddress));
+    broadcastAddress.sin_family = AF_INET;
+    broadcastAddress.sin_port = htons(PORT);
+    inet_pton(AF_INET, "172.18.255.255", &(broadcastAddress.sin_addr)); // TODO: Automate retrieving this docker network address
+
+    ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress));
+    if (bytesSent == -1) {
+        perror("sendto");
+    }
+}
+
 void sendData(std::string containerName, MESSAGE& msg){
     // sends data to drone
     // create message, docker DNS resolution, then send to drone
@@ -71,20 +97,29 @@ void initalizeServer(){
 
     int inn, inn1;
     std::string containerName;
+    std::cout << "GCS Server running on port " << PORT_NUMBER << std::endl;
 
     while (true) {
-        std::cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents " << std::endl; // tests built with assumptions made on # of drones & distances
+        std::cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents\n4) Exit " << std::endl; // tests built with assumptions made on # of drones & distances
+        std::cout << "> ";
         std::cin >> inn; 
         MESSAGE msg;
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
         switch(inn){
             case 1:
-                // select which drone to send request to 
-                // send route request
+                // select which drone does route discovery
+                msg.type = INIT_ROUTE_DISCOVERY;
+                std::cout << "Enter drone ID [number]: ";
+                std::cin >> inn1;
+                std::cout << "Enter destination ID [number]: ";
+                std::cin >> msg.destID;
+                containerName = "drone_security_protocol-drone" + std::to_string(inn1) + "-1";
+                sendData(containerName, msg);
                 break;
             case 2:
+                // select which drone to verify neighbors
                 msg.type = TEST;
-                std::cout << "Enter drone ID [number]: "; // select which drone to send request to 
+                std::cout << "Enter drone ID [number]: ";
                 std::cin >> inn1;   
                 containerName = "drone_security_protocol-drone" + std::to_string(inn1) + "-1";
                 sendData(containerName, msg);
@@ -94,6 +129,10 @@ void initalizeServer(){
                 // select which drone to send request to 
                 // send verify message contents
                 break;
+            case 4:
+                msg.type = EXIT;
+                exitHandler(msg);
+                return;
             default:
                 break;
         }       
