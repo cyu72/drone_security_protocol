@@ -4,6 +4,7 @@
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
+#include <vector>
 #include <csignal>
 #include <unistd.h>
 #include <string>
@@ -22,22 +23,19 @@ enum MESSAGE_TYPE {
     DATA,
     INIT_ROUTE_DISCOVERY, // temp
     NEIGHBOR_PING, // temp
-    TEST
+    TEST,
+    EXIT
 };
 
 // copied over generic message type for now
 struct MESSAGE {
     MESSAGE_TYPE type;
-    int hopCount;
-    int RRQID; // is this supposed to be int?
     int srcID;
+    unsigned long MAC;
     std::string srcIP;
-    int srcSeqNum;
     int destID;
-    int destSeqNum;
     int ttl;
-    int length;
-    char data[1024];
+    std::vector<int> path; // TODO: temporary, will find more space efficient/time efficient way to store routing address
 };
 
 // class GCS{
