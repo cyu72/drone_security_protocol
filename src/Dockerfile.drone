@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY drone /app
 
-RUN apk add g++ make cmake protobuf protobuf-dev gtest-dev
+RUN apk add g++ bind-tools make cmake protobuf protobuf-dev gtest-dev
     
 RUN cmake .
 

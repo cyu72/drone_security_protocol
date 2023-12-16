@@ -2,9 +2,11 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: drone1
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: drone1
   containers: 
     - name: drone1
       image: cyu72/drone:latest
@@ -23,9 +25,11 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: drone2
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: drone2
   containers: 
     - name: drone2
       image: cyu72/drone:latest
@@ -44,9 +48,11 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: drone3
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: drone3
   containers: 
     - name: drone3
       image: cyu72/drone:latest
@@ -65,9 +71,11 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: gcs
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: gcs
   containers: 
     - name: gcs
       image: cyu72/gcs:latest
@@ -81,6 +89,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: drone-broadcast-service
+  namespace: default
 spec:
   selector:
     app: drone

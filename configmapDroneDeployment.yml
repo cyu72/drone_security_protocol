@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: configmapDroneDeployment
-data:
-  PARAM2: "65456"

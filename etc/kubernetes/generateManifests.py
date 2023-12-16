@@ -8,9 +8,11 @@ with open('droneDeployment.yml', 'w') as file:
 kind: Pod
 metadata:
   name: drone{num}
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: drone{num}
   containers: 
     - name: drone{num}
       image: cyu72/drone:latest
@@ -33,9 +35,11 @@ spec:
 kind: Pod
 metadata:
   name: gcs
+  namespace: default
   labels:
     app: drone
 spec:
+  hostname: gcs
   containers: 
     - name: gcs
       image: cyu72/gcs:latest
@@ -51,6 +55,7 @@ spec:
 kind: Service
 metadata:
   name: drone-broadcast-service
+  namespace: default
 spec:
   selector:
     app: drone
