@@ -1,17 +1,15 @@
+# Really need to slim down this image...really big for no reason..
 FROM alpine:latest
 
 WORKDIR /app
 
-COPY drone /app
+COPY drone/*.cpp drone/*.hpp drone/CMakeLists.txt /app/
 
-RUN apk add g++ bind-tools make cmake protobuf protobuf-dev gtest-dev
+RUN apk add --no-cache g++ bind-tools make cmake protobuf protobuf-dev gtest-dev git openssl-dev
     
 RUN cmake .
 
 RUN make
-
-# RUN g++ -o drone drone.cpp drone_test.cpp
-RUN g++ -o drone drone.cpp
 
 EXPOSE 65456
 

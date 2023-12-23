@@ -4,9 +4,11 @@ metadata:
   name: drone1
   namespace: default
   labels:
-    app: drone
+    app: drone1
+    tier: drone
 spec:
   hostname: drone1
+  dnsPolicy: ClusterFirst
   containers: 
     - name: drone1
       image: cyu72/drone:latest
@@ -22,14 +24,29 @@ spec:
           containerPort: 65456
 ---
 apiVersion: v1
+kind: Service
+metadata:
+  name: drone1-service
+spec:
+  selector:
+    app: drone1
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: drone2
   namespace: default
   labels:
-    app: drone
+    app: drone2
+    tier: drone
 spec:
   hostname: drone2
+  dnsPolicy: ClusterFirst
   containers: 
     - name: drone2
       image: cyu72/drone:latest
@@ -45,14 +62,29 @@ spec:
           containerPort: 65456
 ---
 apiVersion: v1
+kind: Service
+metadata:
+  name: drone2-service
+spec:
+  selector:
+    app: drone2
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: drone3
   namespace: default
   labels:
-    app: drone
+    app: drone3
+    tier: drone
 spec:
   hostname: drone3
+  dnsPolicy: ClusterFirst
   containers: 
     - name: drone3
       image: cyu72/drone:latest
@@ -68,14 +100,29 @@ spec:
           containerPort: 65456
 ---
 apiVersion: v1
+kind: Service
+metadata:
+  name: drone3-service
+spec:
+  selector:
+    app: drone3
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
 kind: Pod
 metadata:
   name: gcs
   namespace: default
   labels:
-    app: drone
+    app: gcs
+    tier: drone
 spec:
   hostname: gcs
+  dnsPolicy: ClusterFirst
   containers: 
     - name: gcs
       image: cyu72/gcs:latest
@@ -92,8 +139,8 @@ metadata:
   namespace: default
 spec:
   selector:
-    app: drone
+    tier: drone
   ports:
     - protocol: UDP
-      port: 65456
+      port: 80
       targetPort: 65456

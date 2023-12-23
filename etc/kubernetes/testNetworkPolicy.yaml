@@ -1,4 +1,15 @@
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
+apiVersion: projectcalico.org/v3
+kind: GlobalNetworkPolicy
 metadata:
-  name: test-network-policy
+  name: allow-nodeport
+spec:
+  preDNAT: true
+  applyOnForward: true
+  order: 10
+  ingress:
+    - action: Allow
+      protocol: TCP
+      destination:
+        selector: has(kubernetes-host)
+        ports: [31852]
+  selector: has(kubernetes-host)

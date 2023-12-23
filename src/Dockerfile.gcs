@@ -2,11 +2,13 @@ FROM alpine:latest
 
 WORKDIR /app
 
-COPY gcs /app
+RUN apk add --no-cache g++ bind-tools make cmake git
 
-RUN apk add g++ bind-tools
+COPY gcs/*.cpp gcs/*.hpp gcs/CMakeLists.txt /app/
 
-RUN g++ -o gcs gcs.cpp
+RUN cmake .
+
+RUN make
 
 EXPOSE 65456
 

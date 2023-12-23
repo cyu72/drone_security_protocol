@@ -10,9 +10,11 @@ metadata:
   name: drone{num}
   namespace: default
   labels:
-    app: drone
+    app: drone{num}
+    tier: drone
 spec:
   hostname: drone{num}
+  dnsPolicy: ClusterFirst
   containers: 
     - name: drone{num}
       image: cyu72/drone:latest
@@ -27,7 +29,22 @@ spec:
         - protocol: UDP
           containerPort: 65456
 """
+        service = f"""apiVersion: v1
+kind: Service
+metadata:
+  name: drone{num}-service
+spec:
+  selector:
+    app: drone{num}
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+"""
         file.write(drone)
+        file.write(delim)
+        file.write(service)
         file.write(delim)
 
         
@@ -37,9 +54,11 @@ metadata:
   name: gcs
   namespace: default
   labels:
-    app: drone
+    app: gcs
+    tier: drone
 spec:
   hostname: gcs
+  dnsPolicy: ClusterFirst
   containers: 
     - name: gcs
       image: cyu72/gcs:latest
@@ -58,10 +77,10 @@ metadata:
   namespace: default
 spec:
   selector:
-    app: drone
+    tier: drone
   ports:
     - protocol: UDP
-      port: 65456
+      port: 80
       targetPort: 65456"""
     
     file.write(delim)
