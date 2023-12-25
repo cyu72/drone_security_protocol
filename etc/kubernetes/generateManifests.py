@@ -1,4 +1,11 @@
 droneNum = int(input("Total number of drones in swarm: "))
+imagePullLocation = int(input("1): DockerHub\n2): Local\nImage pull location: "))
+if imagePullLocation == 1:
+    droneImage = "cyu72/drone:latest"
+    gcsImage = "cyu72/gcs:latest"
+elif imagePullLocation == 2:
+    droneImage = "docker.io/library/drone:latest"
+    gcsImage = "docker.io/library/gcs:latest"
 
 delim = "---\n"
 
@@ -17,7 +24,7 @@ spec:
   dnsPolicy: ClusterFirst
   containers: 
     - name: drone{num}
-      image: cyu72/drone:latest
+      image: {droneImage}
       env:
         - name: PARAM1
           value: "drone{num}"
@@ -48,7 +55,7 @@ spec:
         file.write(delim)
 
         
-    gcs = """apiVersion: v1
+    gcs = f"""apiVersion: v1
 kind: Pod
 metadata:
   name: gcs
@@ -61,7 +68,7 @@ spec:
   dnsPolicy: ClusterFirst
   containers: 
     - name: gcs
-      image: cyu72/gcs:latest
+      image: {gcsImage}
       stdin: true
       tty: true
       ports:

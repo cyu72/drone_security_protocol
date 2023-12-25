@@ -1,6 +1,5 @@
 #include "gcs.hpp"
 
-const int PORT = 65456;
 const int BUFFER_SIZE = 1024;
 
 void signalHandler(int signum) {
@@ -17,10 +16,10 @@ void clientThread(int newSD){
     }
 }
 
-void exitHandler(MESSAGE& msg){
+void exitHandler(MESSAGE& msg){ // TODO: update the broadcast for this function
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        std::cerr << "Error in socket creation." << std::endl;
+        std::cerr << "Error in socket creation." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -34,7 +33,7 @@ void exitHandler(MESSAGE& msg){
     struct sockaddr_in broadcastAddress;
     memset(&broadcastAddress, 0, sizeof(broadcastAddress));
     broadcastAddress.sin_family = AF_INET;
-    broadcastAddress.sin_port = htons(PORT);
+    broadcastAddress.sin_port = htons(PORT_NUMBER);
     inet_pton(AF_INET, "172.18.255.255", &(broadcastAddress.sin_addr)); // TODO: Automate retrieving this docker network address
 
     ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress));
@@ -43,9 +42,9 @@ void exitHandler(MESSAGE& msg){
     }
 }
 
-void sendData(std::string containerName, MESSAGE& msg){
+void sendData(string containerName, string& msg){
     // sends data to drone
-    // create message, docker DNS resolution, then send to drone
+    // create message, DNS resolution, then send to drone
     struct addrinfo hints, *result;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET; // Use IPv4
@@ -53,20 +52,21 @@ void sendData(std::string containerName, MESSAGE& msg){
     
     int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
     if (status != 0) {
-        std::cerr << "Error resolving host: " << gai_strerror(status) << std::endl;
+        std::cerr << "Error resolving host: " << gai_strerror(status) << endl;
         return;
     }
 
     int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (sockfd == -1) {
-        std::cerr << "Error creating socket" << std::endl;
+        std::cerr << "Error creating socket" << endl;
         freeaddrinfo(result);
         return;
     }
 
-    ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
+    cout << msg << endl;
+    ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
     if (bytesSent == -1) {
-        std::cerr << "Error: " << strerror(errno) << std::endl;
+        std::cerr << "Error: " << strerror(errno) << endl;
     }
 
     freeaddrinfo(result);
@@ -81,7 +81,7 @@ void initalizeServer(){
     // Create UDP socket
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        std::cerr << "Error in socket creation." << std::endl;
+        std::cerr << "Error in socket creation." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -91,38 +91,40 @@ void initalizeServer(){
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     if (bind(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error in binding." << std::endl;
+        std::cerr << "Error in binding." << endl;
         exit(EXIT_FAILURE);
     }
 
     int inn, inn1;
-    std::string containerName;
-    std::cout << "GCS Server running on port " << PORT_NUMBER << std::endl;
+    string containerName;
+    cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        std::cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents\n4) Exit " << std::endl; // tests built with assumptions made on # of drones & distances
-        std::cout << "> ";
+        cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents\n4) Exit " << endl; // tests built with assumptions made on # of drones & distances
+        cout << "> ";
         std::cin >> inn; 
-        MESSAGE msg;
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
+        GCS_MESSAGE msg;
+        string jsonStr;
         switch(inn){
             case 1:
                 // select which drone does route discovery
                 msg.type = INIT_ROUTE_DISCOVERY;
-                std::cout << "Enter drone ID [number]: ";
+                cout << "Enter drone ID [number]: ";
                 std::cin >> inn1;
-                std::cout << "Enter destination ID [number]: ";
-                std::cin >> msg.destID;
-                containerName = "drone_security_protocol-drone" + std::to_string(inn1) + "-1";
-                sendData(containerName, msg);
+                cout << "Enter destination ID [number]: ";
+                std::cin >> msg.destAddr;
+                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                jsonStr = msg.serialize();
+                sendData(containerName, jsonStr);
                 break;
             case 2:
                 // select which drone to verify neighbors
-                msg.type = TEST;
-                std::cout << "Enter drone ID [number]: ";
-                std::cin >> inn1;   
-                containerName = "drone_security_protocol-drone" + std::to_string(inn1) + "-1";
-                sendData(containerName, msg);
+                // msg->type = TEST;
+                // cout << "Enter drone ID [number]: ";
+                // std::cin >> inn1;   
+                // containerName = "drone" + std::to_string(inn1)+ "-service.default";
+                // sendData(containerName, *msg);
                 // send verify neighbors [temp: print out neighbor list for now]
                 break;
             case 3:
@@ -130,8 +132,8 @@ void initalizeServer(){
                 // send verify message contents
                 break;
             case 4:
-                msg.type = EXIT;
-                exitHandler(msg);
+                // msg.type = EXIT;
+                // exitHandler(msg);
                 return;
             default:
                 break;
