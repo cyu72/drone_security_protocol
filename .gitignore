@@ -3,3 +3,4 @@ CMakeFiles
 build/
 Testing/
 docker-compose.yml
+Makefile
