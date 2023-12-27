@@ -6,16 +6,6 @@ void signalHandler(int signum) {
     exit(signum);
 }
 
-void clientThread(int newSD){
-    char buffer[BUFFER_SIZE];
-    while (true) {
-        
-        // Send a response back to the client
-        const char* response = "Hello from server!";
-        ssize_t send_len = send(newSD, response, strlen(response), 0);
-    }
-}
-
 void exitHandler(MESSAGE& msg){ // TODO: update the broadcast for this function
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
@@ -63,7 +53,7 @@ void sendData(string containerName, string& msg){
         return;
     }
 
-    cout << msg << endl;
+    // cout << msg << endl;
     ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
     if (bytesSent == -1) {
         std::cerr << "Error: " << strerror(errno) << endl;
@@ -105,16 +95,17 @@ void initalizeServer(){
         std::cin >> inn; 
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
         GCS_MESSAGE msg;
-        string jsonStr;
+        string jsonStr, destAddr;
         switch(inn){
             case 1:
                 // select which drone does route discovery
-                msg.type = INIT_ROUTE_DISCOVERY;
                 cout << "Enter drone ID [number]: ";
                 std::cin >> inn1;
-                cout << "Enter destination ID [number]: ";
-                std::cin >> msg.destAddr;
                 containerName = "drone" + std::to_string(inn1) + "-service.default";
+                cout << "Enter destination ID [number]: ";
+                std::cin >> inn1;
+                destAddr = "drone" + std::to_string(inn1) + "-service.default";
+                msg = GCS_MESSAGE(containerName, destAddr, INIT_ROUTE_DISCOVERY);
                 jsonStr = msg.serialize();
                 sendData(containerName, jsonStr);
                 break;

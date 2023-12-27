@@ -9,6 +9,7 @@
 #include <sys/socket.h>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
 #include <sstream>
@@ -78,31 +79,28 @@ struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
 struct RREQ : public MESSAGE {
     string srcAddr;
     string destAddr; 
-    unsigned long RREQ_ID;
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
-    int hashFunction; // temp placeholder for what hashfunction should be
+    string hash;
     unsigned long hopCount;
     int HERR; // temp placeholder for what HERR should be
 
     RREQ() {
         this->type = ROUTE_REQUEST;
-        this->RREQ_ID = 0;
         this->srcSeqNum = 0;
         this->destSeqNum = 0;
-        this->hashFunction = 0;
+        this->hash = "";
         this->hopCount = 0;
         this->HERR = 0;
     }
 
-    RREQ(string srcAddr, string destAddr, unsigned long RREQ_ID, unsigned long srcSeqNum, unsigned long destSeqNum, int hashFunction, unsigned long hopCount, int HERR) {
+    RREQ(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
-        this->RREQ_ID = RREQ_ID;
         this->srcSeqNum = srcSeqNum;
         this->destSeqNum = destSeqNum;
-        this->hashFunction = hashFunction;
+        this->hash = hash;
         this->hopCount = hopCount;
         this->HERR = HERR;
     }
@@ -112,10 +110,9 @@ struct RREQ : public MESSAGE {
             {"type", this->type},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
-            {"RREQ_ID", this->RREQ_ID},
             {"srcSeqNum", this->srcSeqNum},
             {"destSeqNum", this->destSeqNum},
-            {"hashFunction", this->hashFunction},
+            {"hash", this->hash},
             {"hopCount", this->hopCount},
             {"HERR", this->HERR}
         };
@@ -126,32 +123,91 @@ struct RREQ : public MESSAGE {
         this->type = j["type"];
         this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
-        this->RREQ_ID = j["RREQ_ID"];
         this->srcSeqNum = j["srcSeqNum"];
         this->destSeqNum = j["destSeqNum"];
-        this->hashFunction = j["hashFunction"];
+        this->hash = j["hash"];
         this->hopCount = j["hopCount"];
         this->HERR = j["HERR"];
     }
 };
 
-struct INIT_MESSAGE : public MESSAGE {
+struct RREP : public MESSAGE {
+    string srcAddr;
+    string destAddr;
+    unsigned long srcSeqNum;
+    unsigned long destSeqNum;
     string hash;
+    unsigned long hopCount;
+    int HERR; // temp placeholder for what HERR should be
 
-    INIT_MESSAGE() {
-        this->type = INIT_MSG;
-        hash = "";
+    RREP() {
+        this->type = ROUTE_REPLY;
+        this->srcSeqNum = 0;
+        this->destSeqNum = 0;
+        this->hash = "";
+        this->hopCount = 0;
+        this->HERR = 0;
     }
 
-    INIT_MESSAGE(string hash) {
-        this->type = INIT_MSG;
+    RREP(string srcAddr, string destAddr, unsigned long RREQ_ID, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
+        this->type = ROUTE_REPLY;
+        this->srcAddr = srcAddr;
+        this->destAddr = destAddr;
+        this->srcSeqNum = srcSeqNum;
+        this->destSeqNum = destSeqNum;
         this->hash = hash;
+        this->hopCount = hopCount;
+        this->HERR = HERR;
     }
 
     string serialize() const override {
         json j = json{
             {"type", this->type},
-            {"hash", this->hash}
+            {"srcAddr", this->srcAddr},
+            {"destAddr", this->destAddr},
+            {"srcSeqNum", this->srcSeqNum},
+            {"destSeqNum", this->destSeqNum},
+            {"hash", this->hash},
+            {"hopCount", this->hopCount},
+            {"HERR", this->HERR}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->srcAddr = j["srcAddr"];
+        this->destAddr = j["destAddr"];
+        this->srcSeqNum = j["srcSeqNum"];
+        this->destSeqNum = j["destSeqNum"];
+        this->hash = j["hash"];
+        this->hopCount = j["hopCount"];
+        this->HERR = j["HERR"];
+    }
+
+};
+
+struct INIT_MESSAGE : public MESSAGE {
+    string hash;
+    string srcAddr;
+
+    INIT_MESSAGE() {
+        this->type = INIT_MSG;
+        hash = "";
+        srcAddr = "";
+    }
+
+    INIT_MESSAGE(string hash, string addr) {
+        this->type = INIT_MSG;
+        this->hash = hash;
+        this->srcAddr = addr;
+    }
+
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"hash", this->hash},
+            {"srcAddr", this->srcAddr}
         };
         return j.dump();
     }
@@ -159,16 +215,36 @@ struct INIT_MESSAGE : public MESSAGE {
     void deserialize(json& j) override {
         this->type = j["type"];
         this->hash = j["hash"];
+        this->srcAddr = j["srcAddr"];
     }
     
 };
 
 struct ROUTING_TABLE_ENTRY {
-    int destID;
+    string destID;
     int nextHopID;
     int seqNum;
     int cost;
     int ttl;
+    string hash;
+
+    ROUTING_TABLE_ENTRY(){
+        this->destID = "";
+        this->nextHopID = -1;
+        this->seqNum = -1;
+        this->cost = -1;
+        this->ttl = -1;
+        this->hash = "";
+    }
+
+    ROUTING_TABLE_ENTRY(string destID, int nextHopID, int seqNum, int cost, int ttl, string hash){
+        this->destID = destID;
+        this->nextHopID = nextHopID;
+        this->seqNum = seqNum;
+        this->cost = cost;
+        this->ttl = ttl;
+        this->hash = hash;
+    }
 };
 
 class drone {
@@ -177,11 +253,8 @@ class drone {
         int port;
         unsigned long seqNum;
         int nodeID;
-        std::vector<drone> neighbors; // each int represnets a droneID
-        std::vector<ROUTING_TABLE_ENTRY> routingTable;
+        std::unordered_map<string, ROUTING_TABLE_ENTRY> routingTable; // droneID, routingTableEntry | Can replace with int as key
         std::vector<string> hashChainCache; // I dont know if we want to actually store them or not 
-        std::unordered_set<unsigned long> RREQ_cache; // TODO: temp: will find more space efficent way to cache
-        std::unordered_set<unsigned long> RREP_cache; // TODO: temp: will find more space efficent way to cache
 
         drone(){
             this->addr = -1;
@@ -198,14 +271,15 @@ class drone {
         }
 
         int broadcastMessage(const string& msg);
+        void sendData(string containerName, const string& msg);
         void setupPhase();
         string sha256(const string& inn);
         void initMessageHandler(json& data, const int& newSD);
-        void routeRequestHandler(MESSAGE& msg, const int& newSD);
+        void routeRequestHandler(json& data, const int& newSD);
         void routeReplyHandler(MESSAGE &msg, const int& newSD);
         void routeErrorHandler(MESSAGE &msg, const int& newSD);
         void clientResponseThread(int newSD, const string& msg);
-        void initRouteDiscovery(const string& srcNodeID, const string& destNodeID);
+        void initRouteDiscovery(json& data, const int& newSD);
 
 };
 
