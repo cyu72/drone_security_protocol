@@ -8,7 +8,6 @@ metadata:
     tier: drone
 spec:
   hostname: drone1
-  dnsPolicy: ClusterFirst
   containers: 
     - name: drone1
       image: cyu72/drone:latest
@@ -46,7 +45,6 @@ metadata:
     tier: drone
 spec:
   hostname: drone2
-  dnsPolicy: ClusterFirst
   containers: 
     - name: drone2
       image: cyu72/drone:latest
@@ -84,7 +82,6 @@ metadata:
     tier: drone
 spec:
   hostname: drone3
-  dnsPolicy: ClusterFirst
   containers: 
     - name: drone3
       image: cyu72/drone:latest
@@ -115,6 +112,635 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
+  name: drone4
+  namespace: default
+  labels:
+    app: drone4
+    tier: drone
+spec:
+  hostname: drone4
+  containers: 
+    - name: drone4
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone4"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "4"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone4-service
+spec:
+  selector:
+    app: drone4
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone5
+  namespace: default
+  labels:
+    app: drone5
+    tier: drone
+spec:
+  hostname: drone5
+  containers: 
+    - name: drone5
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone5"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "5"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone5-service
+spec:
+  selector:
+    app: drone5
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone6
+  namespace: default
+  labels:
+    app: drone6
+    tier: drone
+spec:
+  hostname: drone6
+  containers: 
+    - name: drone6
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone6"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "6"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone6-service
+spec:
+  selector:
+    app: drone6
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone7
+  namespace: default
+  labels:
+    app: drone7
+    tier: drone
+spec:
+  hostname: drone7
+  containers: 
+    - name: drone7
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone7"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "7"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone7-service
+spec:
+  selector:
+    app: drone7
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone8
+  namespace: default
+  labels:
+    app: drone8
+    tier: drone
+spec:
+  hostname: drone8
+  containers: 
+    - name: drone8
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone8"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "8"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone8-service
+spec:
+  selector:
+    app: drone8
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone9
+  namespace: default
+  labels:
+    app: drone9
+    tier: drone
+spec:
+  hostname: drone9
+  containers: 
+    - name: drone9
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone9"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "9"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone9-service
+spec:
+  selector:
+    app: drone9
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone10
+  namespace: default
+  labels:
+    app: drone10
+    tier: drone
+spec:
+  hostname: drone10
+  containers: 
+    - name: drone10
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone10"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "10"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone10-service
+spec:
+  selector:
+    app: drone10
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone11
+  namespace: default
+  labels:
+    app: drone11
+    tier: drone
+spec:
+  hostname: drone11
+  containers: 
+    - name: drone11
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone11"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "11"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone11-service
+spec:
+  selector:
+    app: drone11
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone12
+  namespace: default
+  labels:
+    app: drone12
+    tier: drone
+spec:
+  hostname: drone12
+  containers: 
+    - name: drone12
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone12"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "12"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone12-service
+spec:
+  selector:
+    app: drone12
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone13
+  namespace: default
+  labels:
+    app: drone13
+    tier: drone
+spec:
+  hostname: drone13
+  containers: 
+    - name: drone13
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone13"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "13"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone13-service
+spec:
+  selector:
+    app: drone13
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone14
+  namespace: default
+  labels:
+    app: drone14
+    tier: drone
+spec:
+  hostname: drone14
+  containers: 
+    - name: drone14
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone14"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "14"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone14-service
+spec:
+  selector:
+    app: drone14
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone15
+  namespace: default
+  labels:
+    app: drone15
+    tier: drone
+spec:
+  hostname: drone15
+  containers: 
+    - name: drone15
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone15"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "15"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone15-service
+spec:
+  selector:
+    app: drone15
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone16
+  namespace: default
+  labels:
+    app: drone16
+    tier: drone
+spec:
+  hostname: drone16
+  containers: 
+    - name: drone16
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone16"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "16"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone16-service
+spec:
+  selector:
+    app: drone16
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone17
+  namespace: default
+  labels:
+    app: drone17
+    tier: drone
+spec:
+  hostname: drone17
+  containers: 
+    - name: drone17
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone17"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "17"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone17-service
+spec:
+  selector:
+    app: drone17
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone18
+  namespace: default
+  labels:
+    app: drone18
+    tier: drone
+spec:
+  hostname: drone18
+  containers: 
+    - name: drone18
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone18"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "18"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone18-service
+spec:
+  selector:
+    app: drone18
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone19
+  namespace: default
+  labels:
+    app: drone19
+    tier: drone
+spec:
+  hostname: drone19
+  containers: 
+    - name: drone19
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone19"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "19"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone19-service
+spec:
+  selector:
+    app: drone19
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone20
+  namespace: default
+  labels:
+    app: drone20
+    tier: drone
+spec:
+  hostname: drone20
+  containers: 
+    - name: drone20
+      image: cyu72/drone:latest
+      env:
+        - name: PARAM1
+          value: "drone20"
+        - name: PARAM2
+          value: "65456"
+        - name: PARAM3
+          value: "20"
+      ports:
+        - protocol: UDP
+          containerPort: 65456
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone20-service
+spec:
+  selector:
+    app: drone20
+    tier: drone
+  ports:
+  - protocol: UDP
+    port: 80
+    targetPort: 65456
+---
+apiVersion: v1
+kind: Pod
+metadata:
   name: gcs
   namespace: default
   labels:
@@ -122,7 +748,6 @@ metadata:
     tier: drone
 spec:
   hostname: gcs
-  dnsPolicy: ClusterFirst
   containers: 
     - name: gcs
       image: cyu72/gcs:latest
@@ -138,6 +763,7 @@ metadata:
   name: drone-broadcast-service
   namespace: default
 spec:
+  clusterIP: None
   selector:
     tier: drone
   ports:
