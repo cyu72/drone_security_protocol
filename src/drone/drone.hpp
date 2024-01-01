@@ -30,7 +30,7 @@ enum MESSAGE_TYPE {
     ROUTE_ERROR,
     DATA,
     INIT_ROUTE_DISCOVERY, // temp
-    NEIGHBOR_PING, // temp
+    VERIFY_ROUTE,
     TEST,
     INIT_MSG, // used to init drone swarm
     EXIT
@@ -78,6 +78,7 @@ struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
 
 struct RREQ : public MESSAGE {
     string srcAddr;
+    string intermediateAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
     string destAddr; 
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
@@ -110,6 +111,7 @@ struct RREQ : public MESSAGE {
             {"type", this->type},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
+            {"intermediateAddr", this->intermediateAddr},
             {"srcSeqNum", this->srcSeqNum},
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
@@ -123,6 +125,7 @@ struct RREQ : public MESSAGE {
         this->type = j["type"];
         this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
+        this->intermediateAddr = j["intermediateAddr"];
         this->srcSeqNum = j["srcSeqNum"];
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
@@ -133,6 +136,7 @@ struct RREQ : public MESSAGE {
 
 struct RREP : public MESSAGE {
     string srcAddr;
+    string intermediateAddr; // same temp field as RREQ
     string destAddr;
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
@@ -165,6 +169,7 @@ struct RREP : public MESSAGE {
             {"type", this->type},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
+            {"intermediateAddr", this->intermediateAddr},
             {"srcSeqNum", this->srcSeqNum},
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
@@ -178,6 +183,7 @@ struct RREP : public MESSAGE {
         this->type = j["type"];
         this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
+        this->intermediateAddr = j["intermediateAddr"];
         this->srcSeqNum = j["srcSeqNum"];
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
@@ -221,24 +227,24 @@ struct INIT_MESSAGE : public MESSAGE {
 };
 
 struct ROUTING_TABLE_ENTRY {
-    string destID;
-    int nextHopID;
+    string destAddr;
+    string nextHopID; // srcAddr = destAddr if neighbor
     int seqNum;
     int cost;
     int ttl;
     string hash;
 
     ROUTING_TABLE_ENTRY(){
-        this->destID = "";
-        this->nextHopID = -1;
+        this->destAddr = "ERR";
+        this->nextHopID = "ERR";
         this->seqNum = -1;
         this->cost = -1;
         this->ttl = -1;
         this->hash = "";
     }
 
-    ROUTING_TABLE_ENTRY(string destID, int nextHopID, int seqNum, int cost, int ttl, string hash){
-        this->destID = destID;
+    ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, int ttl, string hash){
+        this->destAddr = destAddr;
         this->nextHopID = nextHopID;
         this->seqNum = seqNum;
         this->cost = cost;
@@ -267,19 +273,21 @@ class drone {
             this->addr = "drone" + std::to_string(nodeID) + "-service.default";
             this->port = port;
             this->nodeID = nodeID;
-            this->seqNum = 1;
+            this->seqNum = 0;
         }
 
         int broadcastMessage(const string& msg);
         void sendData(string containerName, const string& msg);
         void setupPhase();
         string sha256(const string& inn);
-        void initMessageHandler(json& data, const int& newSD);
-        void routeRequestHandler(json& data, const int& newSD);
-        void routeReplyHandler(MESSAGE &msg, const int& newSD);
-        void routeErrorHandler(MESSAGE &msg, const int& newSD);
+        void initMessageHandler(json& data);
+        void routeRequestHandler(json& data);
+        void routeReplyHandler(json& data);
+        void routeErrorHandler(MESSAGE &msg);
         void clientResponseThread(int newSD, const string& msg);
-        void initRouteDiscovery(json& data, const int& newSD);
+
+        void initRouteDiscovery(json& data);
+        void verifyRouteHandler(json& data);
 
 };
 
