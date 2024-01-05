@@ -8,7 +8,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <thread>
-#include <vector>
+#include <deque>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -33,6 +33,7 @@ enum MESSAGE_TYPE {
     VERIFY_ROUTE,
     TEST,
     INIT_MSG, // used to init drone swarm
+    INIT_ROUTE,
     EXIT
 };
 
@@ -65,7 +66,6 @@ struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
         };
-        cout << j.dump() << endl;
         return j.dump();
     }
 
@@ -153,7 +153,7 @@ struct RREP : public MESSAGE {
         this->HERR = 0;
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long RREQ_ID, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -251,6 +251,10 @@ struct ROUTING_TABLE_ENTRY {
         this->ttl = ttl;
         this->hash = hash;
     }
+
+    void print() {
+        cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl << ", hash: " << hash << endl;
+    }
 };
 
 class drone {
@@ -260,7 +264,7 @@ class drone {
         unsigned long seqNum;
         int nodeID;
         std::unordered_map<string, ROUTING_TABLE_ENTRY> routingTable; // droneID, routingTableEntry | Can replace with int as key
-        std::vector<string> hashChainCache; // I dont know if we want to actually store them or not 
+        std::deque<string> hashChainCache; // I dont know if we want to actually store them or not 
 
         drone(){
             this->addr = -1;

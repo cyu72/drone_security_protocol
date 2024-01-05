@@ -26,9 +26,10 @@ enum MESSAGE_TYPE {
     ROUTE_ERROR,
     DATA,
     INIT_ROUTE_DISCOVERY, // GCS -> Drone to initiate route discovery
-    NEIGHBOR_PING, // temp
+    VERIFY_ROUTE, // GCS -> Drone to verify route
     TEST,
     INIT_MSG, // used to init drone swarm
+    INIT_ROUTE,
     EXIT
 };
 

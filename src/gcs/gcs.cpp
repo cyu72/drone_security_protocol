@@ -63,6 +63,15 @@ void sendData(string containerName, string& msg){
     close(sockfd);
 }
 
+void broadcastMessage(string& msg){
+    int swarmSize = 15; // temp hardcode
+    for (int i = 1; i <= swarmSize; ++i){
+        string containerName = "drone" + std::to_string(i) + "-service.default";
+        sendData(containerName, msg);
+    }
+    cout << "Broadcast Message sent." << endl;
+}
+
 void initalizeServer(){
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
@@ -90,7 +99,7 @@ void initalizeServer(){
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Neighbors\n3) Verify Message Contents\n4) Exit " << endl; // tests built with assumptions made on # of drones & distances
+        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Begin Setup Phase\n4) Exit " << endl; // tests built with assumptions made on # of drones & distances
         cout << "> ";
         std::cin >> inn; 
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
@@ -105,26 +114,28 @@ void initalizeServer(){
                 cout << "Enter destination ID [number]: ";
                 std::cin >> inn1;
                 destAddr = "drone" + std::to_string(inn1) + "-service.default";
+                if (containerName == destAddr){
+                    cout << "Error: Cannot send message to self" << endl;
+                    break;
+                }
                 msg = GCS_MESSAGE(containerName, destAddr, INIT_ROUTE_DISCOVERY);
                 jsonStr = msg.serialize();
                 sendData(containerName, jsonStr);
                 break;
             case 2:
-                // select which drone to verify neighbors
-                // msg->type = TEST;
-                // cout << "Enter drone ID [number]: ";
-                // std::cin >> inn1;   
-                // containerName = "drone" + std::to_string(inn1)+ "-service.default";
-                // sendData(containerName, *msg);
-                // send verify neighbors [temp: print out neighbor list for now]
+                cout << "Enter drone ID [number]: ";
+                std::cin >> inn1;
+                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                msg = GCS_MESSAGE(containerName, "NILL", VERIFY_ROUTE);
+                jsonStr = msg.serialize();
+                sendData(containerName, jsonStr);
                 break;
             case 3:
-                // select which drone to send request to 
-                // send verify message contents
+                msg = GCS_MESSAGE("NILL", "NILL", INIT_ROUTE);
+                jsonStr = msg.serialize();
+                broadcastMessage(jsonStr);
                 break;
             case 4:
-                // msg.type = EXIT;
-                // exitHandler(msg);
                 return;
             default:
                 break;
