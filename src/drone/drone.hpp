@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
+#include <merklecpp.h>
 
 using json = nlohmann::json;
 using std::cout;
@@ -33,7 +34,6 @@ enum MESSAGE_TYPE {
     VERIFY_ROUTE,
     TEST,
     INIT_MSG, // used to init drone swarm
-    INIT_ROUTE,
     EXIT
 };
 

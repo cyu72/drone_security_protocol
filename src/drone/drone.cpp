@@ -15,7 +15,7 @@ void drone::clientResponseThread(int newSD, const string& buffer){
             routeReplyHandler(jsonData);
             break;
         case ROUTE_ERROR:
-            // routeErrorHandler(msg, newSD);
+            // routeErrorHandler(jsonData);
             break;
         case DATA:
             // dataHandler(msg, newSD);
@@ -33,9 +33,6 @@ void drone::clientResponseThread(int newSD, const string& buffer){
         case INIT_MSG:
             cout << "Init message recieved." << endl;
             initMessageHandler(jsonData);
-            break;
-        case INIT_ROUTE:
-            setupPhase();
             break;
         default:
             cout << "Message type not recognized." << endl; 
@@ -285,6 +282,11 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error in binding." << endl;
         exit(EXIT_FAILURE);
     }
+
+    std::thread setupThread([&node]() {
+        node.setupPhase();
+    });
+    setupThread.detach();
     //// Setup End
 
     listen(sockfd, SOMAXCONN); // temp accept max conn -> change to current network + 5

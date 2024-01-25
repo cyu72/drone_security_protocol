@@ -29,7 +29,6 @@ enum MESSAGE_TYPE {
     VERIFY_ROUTE, // GCS -> Drone to verify route
     TEST,
     INIT_MSG, // used to init drone swarm
-    INIT_ROUTE,
     EXIT
 };
 
