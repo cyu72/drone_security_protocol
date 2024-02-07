@@ -1,0 +1,72 @@
+#ifndef HASH_TREE_HPP
+#define HASH_TREE_HPP
+#include <cstdlib>
+#include <cstring>
+#include <iomanip>
+#include <vector>
+#include <iostream>
+#include <openssl/sha.h>
+#include <string>
+#include <sstream>
+
+using std::string;
+using std::endl;
+using std::cout;
+
+class HashTree {
+private:
+    class TreeNode {  
+        public:
+            string hash;
+            TreeNode *left;
+            TreeNode *right;
+            TreeNode(const string&, bool);
+            ~TreeNode() {};
+
+            string hashString(const string&);
+            void setLeft(TreeNode *leftNode) { left = leftNode; }
+            void setRight(TreeNode *rightNode){ right = rightNode; }
+            string getHash() { return hash; }
+
+    };
+    string hashSelf(const string&);
+    string hashNodes(const string&, const string&);
+    TreeNode *root;
+
+public:
+    // case1: first time init tree
+    HashTree(const string& droneNum) {
+        std::cout << "HashTree created" << std::endl;
+        this->root = new TreeNode(droneNum, false);
+    }
+
+    // case2: along the path, we are rebuilding tree
+    HashTree(std::vector<string> hashes, int hopCount, string sourceAddr);
+
+    void deleteTree(TreeNode *node) {
+        if (node->left != nullptr) {
+            deleteTree(node->left);
+        }
+        if (node->right != nullptr) {
+            deleteTree(node->right);
+        }
+        cout << "deleting node: " << node->hash << endl;
+        delete node;
+    }
+
+    ~HashTree() {
+        deleteTree(root);
+    };
+
+    void printTree(TreeNode* node){
+        if (node->left != nullptr){
+            printTree(node->left);
+        }
+        if (node->right != nullptr){
+            printTree(node->right);
+        }
+        std::cout << "data: " << node->hash << std::endl;
+    }
+};
+
+#endif

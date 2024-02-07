@@ -18,7 +18,7 @@
 #include <nlohmann/json.hpp>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
-#include <merklecpp.h>
+#include "hashTree.hpp"
 
 using json = nlohmann::json;
 using std::cout;
