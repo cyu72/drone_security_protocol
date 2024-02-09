@@ -195,7 +195,7 @@ process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=s
 command = "kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml"
 process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-time.sleep(10) # Need to wait for command to execute all yaml files
+time.sleep(20) # Need to wait for command to execute all yaml files
 
 processes = []
 
@@ -218,7 +218,7 @@ while True:
     for pod in pods.items:
         if pod.status.phase != "Running":
             all_running = False
-            time.sleep(3)
+            time.sleep(10) # Wait for all pods to start
             break
 
 
