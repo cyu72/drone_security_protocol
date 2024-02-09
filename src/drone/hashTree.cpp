@@ -54,8 +54,13 @@ string HashTree::hashSelf(const string& data) {
     return ss.str();
 }
 
-// case2: along the path, we are rebuilding tree
 HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceAddr){
+    /*Case 2: Along the path, we are rebuilding the tree.
+    Arguments:
+    1) The array of of hashes
+    2) Current HopCount
+    3) Address this message was recieved from 
+    */
     int numElements = hashesArray.size();
     string lastCalculatedHash;
     string lastElementHash;
@@ -66,18 +71,21 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
         lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastElementHash);
         currNode = new TreeNode(lastCalculatedHash, true);
         currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
-        currNode->setRight(new TreeNode(lastCalculatedHash, true));
-    } else if (hopCount == 1) { // edgecase
-        lastElementHash = hashSelf(sourceAddr);
-        lastCalculatedHash = hashNodes(lastElementHash, hashesArray[numElements - 1]);
-        currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
         currNode->setRight(new TreeNode(lastElementHash, true));
-    } else {
+    } else if (hopCount == 1) { // edgecase for constructing from one hash
+        lastElementHash = hashSelf(sourceAddr);
+        currNode = new TreeNode(lastElementHash, true);
+    } else { // Fixed issue: node was not calculating upper hash previously
         lastElementHash = hashSelf(sourceAddr);
         lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
-        currNode = new TreeNode(hashesArray[numElements - 1], true);
-        currNode->setLeft(new TreeNode(lastCalculatedHash, true));
+        currNode = new TreeNode(lastCalculatedHash, true);
+        currNode->setLeft(new TreeNode(lastElementHash, true));
+        TreeNode *prevNode = currNode;
+
+        lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastCalculatedHash);
+        currNode = new TreeNode(lastCalculatedHash, true);
+        currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+        currNode->setRight(prevNode);
     }
 
     int i = numElements - 2;
@@ -91,18 +99,5 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
         i--;
     }
     root = currNode;
-    // printTree(root);
-    /* Pseudocode (This is not rebuilding the tree, we are simply reshahing to check the root node here, we prolly dont want to do that here and instead just rebuild the tree)
-    lastCalculatedHash = if hopCount is odd, hash last element with itself to get parent node
-    lastCalculatedHash = if hopCount is even, hash last with previous source addr hash to get parent node
-    while currElementInHashArray != firstElement (we start from the second to last element)
-        lastCalculatedHash = Hash[currElementInHashArray || lastCalculatedHash]
-    if lastCalcualtedHash == root
-        choose nodes to send and proceed with rreq/rrep action
-    else
-        delete tree and throw away packet
-
-    */
-
     std::cout << "HashTree created" << std::endl;
 }
