@@ -68,36 +68,95 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
 
     if (hopCount % 2 == 0) { // if hopCount is even, hash last with previous source addr hash to get parent node
         lastElementHash = hashSelf(sourceAddr);
-        lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastElementHash);
+        lastCalculatedHash = hashNodes(hashesArray[0], lastElementHash);
         currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+        currNode->setLeft(new TreeNode(hashesArray[0], true));
         currNode->setRight(new TreeNode(lastElementHash, true));
     } else if (hopCount == 1) { // edgecase for constructing from one hash
         lastElementHash = hashSelf(sourceAddr);
         currNode = new TreeNode(lastElementHash, true);
-    } else { // Fixed issue: node was not calculating upper hash previously
+    } else if (hopCount % 4 == 1) { // edgecase: odd but leaf is the first in the subtree
+        if (hopCount % 8 == 1){ // we are at the first element of the new subtree
+            TreeNode *parent;
+            int numTimesHashed = (hopCount / 8) + 2;
+            lastElementHash = hashSelf(sourceAddr);
+            currNode = new TreeNode(lastElementHash, true);
+            lastCalculatedHash = hashNodes(lastElementHash, lastElementHash); // hash of droneID (leaf)
+            parent = new TreeNode(lastCalculatedHash, true);
+            parent->setLeft(currNode);
+            currNode = parent;
+
+            for (int i = 1; i < numTimesHashed; i++){
+                lastCalculatedHash = hashNodes(lastCalculatedHash, lastCalculatedHash);
+                parent = new TreeNode(lastCalculatedHash, true);
+                parent->setLeft(currNode);
+                currNode = parent;
+            }
+
+            lastCalculatedHash = hashNodes(hashesArray[1], lastCalculatedHash); // always get leftmost hash
+            parent = new TreeNode(lastCalculatedHash, true);
+            parent->setLeft(new TreeNode(hashesArray[1], true));
+            parent->setRight(currNode);
+            root = parent;
+            return;
+        }
+
+        // TODO: Case where we are only a partly empty subtree (13)
+
+    } else { // edgeCase: odd but leaf is already part of subtree
         lastElementHash = hashSelf(sourceAddr);
         lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
         currNode = new TreeNode(lastCalculatedHash, true);
         currNode->setLeft(new TreeNode(lastElementHash, true));
         TreeNode *prevNode = currNode;
 
-        lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastCalculatedHash);
+        lastCalculatedHash = hashNodes(hashesArray[0], lastCalculatedHash);
         currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+        currNode->setLeft(new TreeNode(hashesArray[0], true));
         currNode->setRight(prevNode);
     }
 
-    int i = numElements - 2;
+    int i = 1;
     TreeNode *parentNode;
-    while (i > 0){
+    while (i < numElements - 1){
         lastCalculatedHash = hashNodes(hashesArray[i], lastCalculatedHash);
         parentNode = new TreeNode(lastCalculatedHash, true);
         parentNode->setLeft(new TreeNode(hashesArray[i], true));
         parentNode->setRight(currNode);
         currNode = parentNode;
-        i--;
+        i++;
     }
     root = currNode;
     std::cout << "HashTree created" << std::endl;
+}
+
+bool HashTree::verifyTree(string& recvHash){
+    /* Verifies the tree via checking root hash with calculated root. */
+    if (recvHash == root->hash){
+        return true;
+    }
+    return false;
+}
+
+void HashTree::addSelf(string& droneName){
+
+}
+
+std::vector<string> HashTree::toVector(){
+    /*Returns a vector of only the elements required to rebuild the tree*/
+    std::vector<string> hashes;
+    hashes.push_back(root->hash);
+    TreeNode* currNode = root;
+    TreeNode* leftNode;
+    while(currNode->left != nullptr && currNode->right != nullptr){
+        leftNode = currNode->left;
+        hashes.push_back(leftNode->hash);
+        currNode = currNode->right;
+    } // Need to make the case where the right node is null (we had to duplicate nodes to finish tree)
+
+    for (const auto& hash : hashes) {
+        std::cout << hash << std::endl;
+    }
+
+    return hashes;
 }

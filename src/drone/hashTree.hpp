@@ -13,6 +13,8 @@ using std::string;
 using std::endl;
 using std::cout;
 
+/* Leaf Nodes are hashes of droneID. In other words, the leaf node IS NOT the droneID. */
+
 class HashTree {
 private:
     class TreeNode {  
@@ -67,6 +69,10 @@ public:
         }
         std::cout << "data: " << node->hash << std::endl;
     }
+
+    bool verifyTree(string&);
+    void addSelf(string&);
+    std::vector<string> toVector();
 };
 
 #endif
