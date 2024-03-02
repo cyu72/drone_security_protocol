@@ -54,6 +54,7 @@ string HashTree::hashSelf(const string& data) {
     return ss.str();
 }
 
+/*HashesArray[root, leftNode, .... n - 1]*/
 HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceAddr){
     /*Case 2: Along the path, we are rebuilding the tree.
     Arguments:
@@ -66,67 +67,137 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
     string lastElementHash;
     TreeNode *currNode;
 
-    if (hopCount % 2 == 0) { // if hopCount is even, hash last with previous source addr hash to get parent node
-        lastElementHash = hashSelf(sourceAddr);
-        lastCalculatedHash = hashNodes(hashesArray[0], lastElementHash);
-        currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(hashesArray[0], true));
-        currNode->setRight(new TreeNode(lastElementHash, true));
-    } else if (hopCount == 1) { // edgecase for constructing from one hash
-        lastElementHash = hashSelf(sourceAddr);
-        currNode = new TreeNode(lastElementHash, true);
-    } else if (hopCount % 4 == 1) { // edgecase: odd but leaf is the first in the subtree
-        if (hopCount % 8 == 1){ // we are at the first element of the new subtree
-            TreeNode *parent;
-            int numTimesHashed = (hopCount / 8) + 2;
-            lastElementHash = hashSelf(sourceAddr);
-            currNode = new TreeNode(lastElementHash, true);
-            lastCalculatedHash = hashNodes(lastElementHash, lastElementHash); // hash of droneID (leaf)
-            parent = new TreeNode(lastCalculatedHash, true);
-            parent->setLeft(currNode);
-            currNode = parent;
-
-            for (int i = 1; i < numTimesHashed; i++){
-                lastCalculatedHash = hashNodes(lastCalculatedHash, lastCalculatedHash);
-                parent = new TreeNode(lastCalculatedHash, true);
-                parent->setLeft(currNode);
-                currNode = parent;
-            }
-
-            lastCalculatedHash = hashNodes(hashesArray[1], lastCalculatedHash); // always get leftmost hash
-            parent = new TreeNode(lastCalculatedHash, true);
-            parent->setLeft(new TreeNode(hashesArray[1], true));
-            parent->setRight(currNode);
-            root = parent;
-            return;
-        }
-
-        // TODO: Case where we are only a partly empty subtree (13)
-
-    } else { // edgeCase: odd but leaf is already part of subtree
+    if (hopCount == 1){ // edgecase for constructing from one hash
         lastElementHash = hashSelf(sourceAddr);
         lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
         currNode = new TreeNode(lastCalculatedHash, true);
         currNode->setLeft(new TreeNode(lastElementHash, true));
-        TreeNode *prevNode = currNode;
-
-        lastCalculatedHash = hashNodes(hashesArray[0], lastCalculatedHash);
+        root = currNode;
+    } else if (hopCount == 2) { // edgecase for constructing from two hashes
+        lastElementHash = hashSelf(sourceAddr);
+        lastCalculatedHash = hashNodes(hashesArray[1], lastElementHash);
         currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(hashesArray[0], true));
-        currNode->setRight(prevNode);
+        root = currNode;
+        currNode = new TreeNode(hashesArray[1], true);
+        root->setLeft(currNode);
+        currNode = new TreeNode(lastElementHash, true);
+        root->setRight(currNode);
+    } else if ((numElements == 2 || numElements == 3) && (( ( (hopCount - 1) % 4 == 0) ) || ((hopCount - 2) % 4 == 0) ) ){ // edgecase for constructing leftmost subtree
+        lastElementHash = hashSelf(sourceAddr);
+        if (numElements == 2){
+            lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(new TreeNode(lastElementHash, true));
+        } else {
+            lastCalculatedHash = hashNodes(hashesArray[2], lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(new TreeNode(hashesArray[2], true));
+            currNode->setRight(new TreeNode(lastElementHash, true));
+        }
+
+        
+        TreeNode *prev = currNode;
+        int levels = std::ceil(std::log2(hopCount));
+        while (levels > 2){ // We skip past the leaf level and keep going until first level
+            lastCalculatedHash = hashNodes(lastCalculatedHash, lastCalculatedHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(prev);
+            prev = currNode;
+            levels--;
+        }
+
+        lastCalculatedHash = hashNodes(hashesArray[1], lastCalculatedHash);
+        currNode = new TreeNode(lastCalculatedHash, true);
+        currNode->setLeft(new TreeNode(hashesArray[1], true));
+        currNode->setRight(prev);
+        root = currNode;
+    } else if ((hopCount < 5) && ((hopCount % 4 == 0) || ((hopCount + 1) % 4 == 0))){ // edgecase for constructing rightmost subtree
+        lastElementHash = hashSelf(sourceAddr);
+        if (hopCount % 4 == 0){
+            lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setRight(new TreeNode(lastElementHash, true)); // do not require these to be added, can be removed for optimization
+            currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+            numElements--;
+        } else {
+            lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(new TreeNode(lastElementHash, true));
+        }
+
+        TreeNode *prev = currNode;
+        int levels = std::ceil(std::log2(hopCount));
+        while (levels > 1){
+            lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastCalculatedHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setRight(prev);
+            currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+            prev = currNode;
+            levels--;
+            numElements--;
+        }
+        root = currNode;
+
+    } else { // generalized case
+        TreeNode* prev;
+        int prevLevel = hopCount;
+        lastElementHash = hashSelf(sourceAddr);
+        if (prevLevel % 2 == 1){
+            lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(new TreeNode(lastElementHash, true));
+        } else {
+            lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastElementHash);
+            currNode = new TreeNode(lastCalculatedHash, true);
+            currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+            currNode->setRight(new TreeNode(lastElementHash, true));
+            numElements--;
+        }
+        prev = currNode;
+        
+        int levels = std::ceil(std::log2(hopCount));
+        prevLevel = std::ceil((prevLevel / 2.0));
+        while (levels > 2){ // skip leaf & root
+            if (prevLevel % 2 == 1){
+                lastCalculatedHash = hashNodes(lastCalculatedHash, lastCalculatedHash);
+                currNode = new TreeNode(lastCalculatedHash, true);
+                currNode->setLeft(prev);
+            } else {
+                cout << prevLevel << std::endl;
+                lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastCalculatedHash);
+                currNode = new TreeNode(lastCalculatedHash, true);
+                currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
+                currNode->setRight(prev);
+                numElements--;
+            }
+            prev = currNode;
+            levels--;
+            prevLevel = std::ceil((prevLevel / 2));
+        }
+        // root case
+        lastCalculatedHash = hashNodes(hashesArray[1], lastCalculatedHash);
+        root = new TreeNode(lastCalculatedHash, true);
+        root->setLeft(new TreeNode(hashesArray[1], true));
+        root->setRight(prev);
+
+        /* 
+        function to determine if subtree is left or right(hopCount):
+            log2(hopCount) = n
+            2^n / 2 = y
+            If hopCount > (y + y/2): in right subtree
+            else in left subtree
+            return true if in right, false if in left
+        
+        while level > 1:
+        Determine what subtree current element is in
+            if left: hash self
+            if right: hash with n, where n is the last element in the hasharray
+        Move up one level, determine that subtree
+            if left: hash self
+            if right: hash with n - 1, where n is second to last element
+        etc, etc.*/
     }
 
-    int i = 1;
-    TreeNode *parentNode;
-    while (i < numElements - 1){
-        lastCalculatedHash = hashNodes(hashesArray[i], lastCalculatedHash);
-        parentNode = new TreeNode(lastCalculatedHash, true);
-        parentNode->setLeft(new TreeNode(hashesArray[i], true));
-        parentNode->setRight(currNode);
-        currNode = parentNode;
-        i++;
-    }
-    root = currNode;
     std::cout << "HashTree created" << std::endl;
 }
 

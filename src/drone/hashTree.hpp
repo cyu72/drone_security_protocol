@@ -8,6 +8,7 @@
 #include <openssl/sha.h>
 #include <string>
 #include <sstream>
+#include <cmath>
 
 using std::string;
 using std::endl;
