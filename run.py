@@ -225,6 +225,7 @@ while True:
     # Port forward all services to be accessible from outside the cluster
     if all_running:
         print("All pods are running")
+        time.sleep(5)
         for service in services.items:
             if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
                 drone_number = service.metadata.name.split("drone")[1].split("-")[0]
@@ -238,6 +239,7 @@ while True:
 
 
         # Send a request to each service
+        time.sleep(5)
         for service in services.items:
             if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
                 drone_number = service.metadata.name.split("drone")[1].split("-")[0]

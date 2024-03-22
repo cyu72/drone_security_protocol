@@ -268,6 +268,16 @@ void drone::setupPhase(){
         this->hashChainCache.push_front(hash);
     }
     string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
+
+    /*Temp code to make all drones start at the same time
+    Waits until the nearest 30 seconds to start code*/
+
+    auto now = std::chrono::system_clock::now();
+    auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    int currSecond = now_sec.time_since_epoch().count() % 60;
+    int secsToWait = 30 - currSecond;
+    sleep(secsToWait);
+    
     this->broadcastMessage(msg);
 }
 
