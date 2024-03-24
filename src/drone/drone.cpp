@@ -104,8 +104,7 @@ void drone::initRouteDiscovery(json& data){
     msg.destSeqNum = (it != this->routingTable.end()) ? it->second.seqNum : 0;
     msg.hopCount = 0; // 0 = broadcast range
     // sumn about HERR
-    msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount + 1]; // TODO: Wrap around the cache when needed // NOTE: 8 = hardcoded max hop
-
+    msg.hash = (msg.srcSeqNum == 1) ? this->hashChainCache[1] : this->hashChainCache[(msg.srcSeqNum - 1) * 8 + 1]; // TODO: Wrap around the cache when needed // NOTE: 8 = hardcoded max hop
     // init hash tree
     
 
@@ -122,7 +121,7 @@ void drone::initMessageHandler(json& data){
     INIT_MESSAGE msg;
     msg.deserialize(data);
     // create a routing table entry for each one recieved
-    // entry(srcAddr, nextHop, seqNum, hopCount, ttl, hash)
+    // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
     ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 1, 0, 10, msg.hash); // TODO: Incorporate ttl mechanics
     this->routingTable[msg.srcAddr] = entry;
 }
@@ -143,15 +142,15 @@ void drone::routeRequestHandler(json& data){
     if (this->routingTable.find(msg.intermediateAddr) != this->routingTable.end()){
         if (msg.srcSeqNum < routingTable[msg.intermediateAddr].seqNum) return; // Drop Packet Condition: If the seqNum is less than the seqNum already received
         string hashRes = msg.hash;
-        int hashIterations = msg.srcSeqNum * msg.hopCount;
-        for (int i = routingTable[msg.intermediateAddr].cost; i <= hashIterations; i++) {
+        int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+        for (int i = routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
         }
         if (hashRes != routingTable[msg.intermediateAddr].hash) return; // Drop Packet Condition: If the hash does not match the hash for the seqNum
     }
 
     // Cache source addr as a reachable destination in the cache with the sender of the RREQ as the intermediary (if this->addr != msg.srcAddr)
-    // if (msg.hopCount != 0) this->routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: Fix the hash that is stored here, it should be the inital commit, not this
+    if (msg.hopCount != 0) this->routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: Fix the hash that is stored here, it should be the inital commit, not this
 
     // if true, check if currNode is the dest {Can also send back RREP if cached, should weigh pros/cons}
     if (msg.destAddr == this->addr){
@@ -163,7 +162,7 @@ void drone::routeRequestHandler(json& data){
         rrep.intermediateAddr = this->addr;
 
         auto it = this->routingTable.find(msg.destAddr);
-        rrep.destSeqNum = (it != this->routingTable.end()) ? this->routingTable[msg.destAddr].seqNum : this->seqNum;
+        rrep.destSeqNum = (it != this->routingTable.end()) ? this->routingTable[msg.destAddr].seqNum : this->seqNum; // TODO: Shouldn't this just be this->seqNum??
 
         rrep.hopCount = 0;
         rrep.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + rrep.hopCount + 1];
@@ -204,8 +203,8 @@ void drone::routeReplyHandler(json& data){
 
     // check sha256(recieved hash) == cached hash for that node
     string hashRes = msg.hash;
-    int hashIterations = msg.srcSeqNum * msg.hopCount;
-    for (int i = routingTable[msg.intermediateAddr].cost; i <= hashIterations; i++) {
+    int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+    for (int i = routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
         hashRes = sha256(hashRes);
     }
 
@@ -220,6 +219,7 @@ void drone::routeReplyHandler(json& data){
     if (msg.destAddr == this->addr){ 
         routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash);
         cout << "Successfully completed route" << endl;
+        return;
     } else {
         msg.hopCount++;
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount + 1];
@@ -254,7 +254,10 @@ void drone::setupPhase(){
     
     Temp: Hardcoding number of hashes in hashChain (10 seqNums * 8 max hop distance) = 80x hashed
         What happens when we reach the end of the hash chain?
-        Skipping the step to verify authenticity of drone (implement later, not very important) */
+        Skipping the step to verify authenticity of drone (implement later, not very important) 
+        
+    TODO: Include function that dynamically generates hashChain upon nearing depletion    
+        */
 
     unsigned char buffer[56];
     RAND_bytes(buffer, sizeof(buffer));
@@ -266,6 +269,7 @@ void drone::setupPhase(){
     for (int i = 0; i < 80; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
+        cout << "Hash: " << hash << endl;
     }
     string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 

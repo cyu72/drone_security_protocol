@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 #include <openssl/sha.h>
 #include <openssl/rand.h>
+#include <chrono>
 #include "hashTree.hpp"
 
 using json = nlohmann::json;
@@ -83,6 +84,7 @@ struct RREQ : public MESSAGE {
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
     string hash;
+    std::vector<string> hashTree; // can optimize later to use memory more efficiently
     unsigned long hopCount;
     int HERR; // temp placeholder for what HERR should be
 
@@ -93,9 +95,10 @@ struct RREQ : public MESSAGE {
         this->hash = "";
         this->hopCount = 0;
         this->HERR = 0;
+        this->hashTree = {};
     }
 
-    RREQ(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
+    RREQ(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, std::vector<string> hashTree) {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -104,9 +107,11 @@ struct RREQ : public MESSAGE {
         this->hash = hash;
         this->hopCount = hopCount;
         this->HERR = HERR;
+        this->hashTree = hashTree;
     }
 
     string serialize() const override {
+        cout << "Pre-sent: " << this->destSeqNum << endl;
         json j = json{
             {"type", this->type},
             {"srcAddr", this->srcAddr},
@@ -116,7 +121,9 @@ struct RREQ : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"HERR", this->HERR}
+            {"HERR", this->HERR},
+            {"hashTree", this->hashTree}
+
         };
         return j.dump();
     }
@@ -131,6 +138,8 @@ struct RREQ : public MESSAGE {
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
         this->HERR = j["HERR"];
+        this->hashTree = j["hashTree"].get<std::vector<string>>();
+        cout << "Post-sent: " << this->destSeqNum << endl;
     }
 };
 
@@ -229,8 +238,8 @@ struct INIT_MESSAGE : public MESSAGE {
 struct ROUTING_TABLE_ENTRY {
     string destAddr;
     string nextHopID; // srcAddr = destAddr if neighbor
-    int seqNum;
-    int cost;
+    int seqNum; // the destinations seqNum
+    int cost; // The inital cost to reach the destination (?)
     int ttl;
     string hash;
 
@@ -292,6 +301,8 @@ class drone {
 
         void initRouteDiscovery(json& data);
         void verifyRouteHandler(json& data);
+    private:
+        const uint8_t max_hop_count = 8; // hardcoded for a max hop count to be 8; meaning 8 drones can be in a chain at one time
 
 };
 
