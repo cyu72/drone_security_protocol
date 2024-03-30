@@ -34,6 +34,10 @@ void drone::clientResponseThread(int newSD, const string& buffer){
             cout << "Init message recieved." << endl;
             initMessageHandler(jsonData);
             break;
+        case TESLA_MSG:
+            cout << "Tesla message recieved." << endl;
+            // this->tesla.recv(jsonData);
+            break;
         default:
             cout << "Message type not recognized." << endl; 
             break;
@@ -41,8 +45,12 @@ void drone::clientResponseThread(int newSD, const string& buffer){
 }
 
 void drone::verifyRouteHandler(json& data){
-    for (auto& [key, value] : this->routingTable){
+    for (auto& [key, value] : this->tesla.routingTable){
         value.print();
+    }
+    cout << "\n";
+    for (const auto& element : this->tesla.mac_q) {
+        std::cout << element.data << " " << element.MAC << " " << element.tstamp.time_since_epoch().count() << std::endl;
     }
 }
 
@@ -100,8 +108,8 @@ void drone::initRouteDiscovery(json& data){
     msg.destAddr = ctl.destAddr;
     msg.srcSeqNum = ++this->seqNum;
 
-    auto it = this->routingTable.find(msg.destAddr);
-    msg.destSeqNum = (it != this->routingTable.end()) ? it->second.seqNum : 0;
+    auto it = this->tesla.routingTable.find(msg.destAddr);
+    msg.destSeqNum = (it != this->tesla.routingTable.end()) ? it->second.seqNum : 0;
     msg.hopCount = 0; // 0 = broadcast range
     // sumn about HERR
     msg.hash = (msg.srcSeqNum == 1) ? this->hashChainCache[1] : this->hashChainCache[(msg.srcSeqNum - 1) * 8 + 1]; // TODO: Wrap around the cache when needed // NOTE: 8 = hardcoded max hop
@@ -118,12 +126,12 @@ void drone::initRouteDiscovery(json& data){
 }
 
 void drone::initMessageHandler(json& data){
+    /*Creates a routing table entry for each authenticator recieved*/
     INIT_MESSAGE msg;
     msg.deserialize(data);
-    // create a routing table entry for each one recieved
     // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
     ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 1, 0, 10, msg.hash); // TODO: Incorporate ttl mechanics
-    this->routingTable[msg.srcAddr] = entry;
+    this->tesla.routingTable[msg.srcAddr] = entry;
 }
 
 void drone::routeRequestHandler(json& data){ 
@@ -139,18 +147,18 @@ void drone::routeRequestHandler(json& data){
     msg.deserialize(data);
 
     if (msg.srcAddr == this->addr) return; // Drop Packet Condition: If the srcAddr is the same as the current node
-    if (this->routingTable.find(msg.intermediateAddr) != this->routingTable.end()){
-        if (msg.srcSeqNum < routingTable[msg.intermediateAddr].seqNum) return; // Drop Packet Condition: If the seqNum is less than the seqNum already received
+    if (this->tesla.routingTable.find(msg.intermediateAddr) != this->tesla.routingTable.end()){
+        if (msg.srcSeqNum < this->tesla.routingTable[msg.intermediateAddr].seqNum) return; // Drop Packet Condition: If the seqNum is less than the seqNum already received
         string hashRes = msg.hash;
         int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
-        for (int i = routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
+        for (int i = this->tesla.routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
         }
-        if (hashRes != routingTable[msg.intermediateAddr].hash) return; // Drop Packet Condition: If the hash does not match the hash for the seqNum
+        if (hashRes != this->tesla.routingTable[msg.intermediateAddr].hash) return; // Drop Packet Condition: If the hash does not match the hash for the seqNum
     }
 
-    // Cache source addr as a reachable destination in the cache with the sender of the RREQ as the intermediary (if this->addr != msg.srcAddr)
-    if (msg.hopCount != 0) this->routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: Fix the hash that is stored here, it should be the inital commit, not this
+    // TODO: Cache source addr as a reachable destination in the cache with the sender of the RREQ as the intermediary (if this->addr != msg.srcAddr)
+    // if (msg.hopCount != 0) this->routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: This doesn't work...
 
     // if true, check if currNode is the dest {Can also send back RREP if cached, should weigh pros/cons}
     if (msg.destAddr == this->addr){
@@ -161,8 +169,8 @@ void drone::routeRequestHandler(json& data){
         rrep.srcSeqNum = msg.srcSeqNum; // Maintain src Seqnum
         rrep.intermediateAddr = this->addr;
 
-        auto it = this->routingTable.find(msg.destAddr);
-        rrep.destSeqNum = (it != this->routingTable.end()) ? this->routingTable[msg.destAddr].seqNum : this->seqNum; // TODO: Shouldn't this just be this->seqNum??
+        auto it = this->tesla.routingTable.find(msg.destAddr);
+        rrep.destSeqNum = (it != this->tesla.routingTable.end()) ? this->tesla.routingTable[msg.destAddr].seqNum : this->seqNum; // TODO: Shouldn't this just be this->seqNum??
 
         rrep.hopCount = 0;
         rrep.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + rrep.hopCount + 1];
@@ -172,8 +180,8 @@ void drone::routeRequestHandler(json& data){
         if (msg.hopCount == 0){
             sendData(rrep.destAddr, buf); // Send back directly if neighbor
         } else {
-            cout << "Sending RREP to next hop: " << routingTable[msg.srcAddr].nextHopID << endl;
-            sendData(routingTable[msg.srcAddr].nextHopID, buf); // send to next hop stored
+            cout << "Sending RREP to next hop: " << this->tesla.routingTable[msg.srcAddr].nextHopID << endl;
+            sendData(this->tesla.routingTable[msg.srcAddr].nextHopID, buf); // send to next hop stored
         }
         // TODO: Check ttl 
     }
@@ -181,8 +189,8 @@ void drone::routeRequestHandler(json& data){
         msg.hopCount++;
         msg.intermediateAddr = this->addr;
 
-        auto it = this->routingTable.find(msg.destAddr);
-        msg.destSeqNum = (it != this->routingTable.end()) ? this->routingTable[msg.destAddr].seqNum : this->seqNum;
+        auto it = this->tesla.routingTable.find(msg.destAddr);
+        msg.destSeqNum = (it != this->tesla.routingTable.end()) ? this->tesla.routingTable[msg.destAddr].seqNum : this->seqNum;
 
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount + 1];
         string buf = msg.serialize();
@@ -204,20 +212,20 @@ void drone::routeReplyHandler(json& data){
     // check sha256(recieved hash) == cached hash for that node
     string hashRes = msg.hash;
     int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
-    for (int i = routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
+    for (int i = this->tesla.routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
         hashRes = sha256(hashRes);
     }
 
-    if (hashRes != routingTable[msg.intermediateAddr].hash){ // code is expanded for debugging purposes
+    if (hashRes != this->tesla.routingTable[msg.intermediateAddr].hash){ // code is expanded for debugging purposes
         cout << "Incorrect hash, dropping RREP." << endl;
         return;
-    } else if (msg.srcSeqNum < routingTable[msg.intermediateAddr].seqNum){
+    } else if (msg.srcSeqNum < this->tesla.routingTable[msg.intermediateAddr].seqNum){
         cout << "Smaller seqNum, dropping RREP." << endl;
         return;
     }
 
     if (msg.destAddr == this->addr){ 
-        routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash);
+        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash);
         cout << "Successfully completed route" << endl;
         return;
     } else {
@@ -225,7 +233,7 @@ void drone::routeReplyHandler(json& data){
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount + 1];
         msg.intermediateAddr = this->addr; // update intermediate addr so final node can add to cache
         string buf = msg.serialize();
-        sendData(routingTable[msg.destAddr].nextHopID, buf);
+        sendData(this->tesla.routingTable[msg.destAddr].nextHopID, buf);
     }
 }
 
@@ -259,6 +267,7 @@ void drone::setupPhase(){
     TODO: Include function that dynamically generates hashChain upon nearing depletion    
         */
 
+    cout << "Setting up drone in setup function." << endl;
     unsigned char buffer[56];
     RAND_bytes(buffer, sizeof(buffer));
     std::stringstream ss;
@@ -269,7 +278,7 @@ void drone::setupPhase(){
     for (int i = 0; i < 80; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
-        cout << "Hash: " << hash << endl;
+        // cout << "Hash: " << hash << endl;
     }
     string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
@@ -280,16 +289,34 @@ void drone::setupPhase(){
     auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
     int currSecond = now_sec.time_since_epoch().count() % 60;
     int secsToWait = 30 - currSecond;
+    cout << "Waiting for " << secsToWait << " seconds." << endl;
     sleep(secsToWait);
     
     this->broadcastMessage(msg);
+    msg = this->tesla.init_tesla(this->addr).serialize();
+    this->broadcastMessage(msg);
+
+    // // Setup a thread that is dedicated to sending out hash disclosures
+    // std::thread hashDisclosureThread([&](){
+    //     while (true) {
+    //         sleep(this->tesla.disclosure_time);
+    //         // build the tesla message
+    //         TESLA_MESSAGE teslaMsg;
+    //         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
+    //         string buf = teslaMsg.serialize();
+    //         this->broadcastMessage(buf);
+    //     }
+    // });
+    // hashDisclosureThread.detach(); // How do I stop a thread later on..?
 }
 
 int main(int argc, char* argv[]) {
+    cout << "Starting drone." << endl;
     const string param1 = std::getenv("PARAM1");
     const char* param2 = std::getenv("PARAM2");
     const char* param3 = std::getenv("PARAM3");
-    drone node(param1, std::stoi(param2), std::stoi(param3)); // env vars for init
+    drone node(std::stoi(param2), std::stoi(param3)); // env vars for init
+    cout << "Drone object created." << endl;
 
     int sockfd;
     struct sockaddr_in server_addr, client_addr;
@@ -313,13 +340,14 @@ int main(int argc, char* argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    std::thread setupThread([&node]() {
-        node.setupPhase();
-    });
-    setupThread.detach();
+    
+    // std::thread setupThread([&node]() {
+    //     cout << "Created a thread" << endl;
+    //     node.setupPhase();
+    // });
+    // setupThread.detach();
     //// Setup End
 
-    listen(sockfd, SOMAXCONN); // temp accept max conn -> change to current network + 5
     cout << "Entering server loop " << endl;
     while (true) {
         struct sockaddr_in client_addr;

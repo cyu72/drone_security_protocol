@@ -7,7 +7,9 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <tuple>
 #include <thread>
+#include <set>
 #include <deque>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,231 +19,28 @@
 #include <netdb.h>
 #include <nlohmann/json.hpp>
 #include <openssl/sha.h>
+#include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <chrono>
 #include "hashTree.hpp"
+#include "messages.hpp"
 
 using json = nlohmann::json;
 using std::cout;
 using std::endl;
 using std::string;
 
-enum MESSAGE_TYPE {
-    ROUTE_REQUEST = 0,
-    ROUTE_REPLY, 
-    ROUTE_ERROR,
-    DATA,
-    INIT_ROUTE_DISCOVERY, // temp
-    VERIFY_ROUTE,
-    TEST,
-    INIT_MSG, // used to init drone swarm
-    EXIT
-};
-
-struct MESSAGE {
-    MESSAGE_TYPE type;
-    virtual string serialize() const = 0;
-    virtual void deserialize(json& j) = 0;
-    virtual ~MESSAGE() = default;
-};
-
-struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
-    std::string srcAddr;
-    std::string destAddr;
-
-    GCS_MESSAGE() {
-        this->type = DATA;
-        this->srcAddr = "NILL";
-        this->destAddr = "NILL";
-    }
-
-    GCS_MESSAGE(std::string srcAddr, std::string destAddr, std::string msg) {
-        this->type = DATA;
-        this->srcAddr = srcAddr;
-        this->destAddr = destAddr;
-    }
-
-    std::string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"srcAddr", this->srcAddr},
-            {"destAddr", this->destAddr},
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->srcAddr = j["srcAddr"];
-        this->destAddr = j["destAddr"];
-    }
-};
-
-struct RREQ : public MESSAGE {
-    string srcAddr;
-    string intermediateAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
-    string destAddr; 
-    unsigned long srcSeqNum;
-    unsigned long destSeqNum;
-    string hash;
-    std::vector<string> hashTree; // can optimize later to use memory more efficiently
-    unsigned long hopCount;
-    int HERR; // temp placeholder for what HERR should be
-
-    RREQ() {
-        this->type = ROUTE_REQUEST;
-        this->srcSeqNum = 0;
-        this->destSeqNum = 0;
-        this->hash = "";
-        this->hopCount = 0;
-        this->HERR = 0;
-        this->hashTree = {};
-    }
-
-    RREQ(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, std::vector<string> hashTree) {
-        this->type = ROUTE_REQUEST;
-        this->srcAddr = srcAddr;
-        this->destAddr = destAddr;
-        this->srcSeqNum = srcSeqNum;
-        this->destSeqNum = destSeqNum;
-        this->hash = hash;
-        this->hopCount = hopCount;
-        this->HERR = HERR;
-        this->hashTree = hashTree;
-    }
-
-    string serialize() const override {
-        cout << "Pre-sent: " << this->destSeqNum << endl;
-        json j = json{
-            {"type", this->type},
-            {"srcAddr", this->srcAddr},
-            {"destAddr", this->destAddr},
-            {"intermediateAddr", this->intermediateAddr},
-            {"srcSeqNum", this->srcSeqNum},
-            {"destSeqNum", this->destSeqNum},
-            {"hash", this->hash},
-            {"hopCount", this->hopCount},
-            {"HERR", this->HERR},
-            {"hashTree", this->hashTree}
-
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->srcAddr = j["srcAddr"];
-        this->destAddr = j["destAddr"];
-        this->intermediateAddr = j["intermediateAddr"];
-        this->srcSeqNum = j["srcSeqNum"];
-        this->destSeqNum = j["destSeqNum"];
-        this->hash = j["hash"];
-        this->hopCount = j["hopCount"];
-        this->HERR = j["HERR"];
-        this->hashTree = j["hashTree"].get<std::vector<string>>();
-        cout << "Post-sent: " << this->destSeqNum << endl;
-    }
-};
-
-struct RREP : public MESSAGE {
-    string srcAddr;
-    string intermediateAddr; // same temp field as RREQ
-    string destAddr;
-    unsigned long srcSeqNum;
-    unsigned long destSeqNum;
-    string hash;
-    unsigned long hopCount;
-    int HERR; // temp placeholder for what HERR should be
-
-    RREP() {
-        this->type = ROUTE_REPLY;
-        this->srcSeqNum = 0;
-        this->destSeqNum = 0;
-        this->hash = "";
-        this->hopCount = 0;
-        this->HERR = 0;
-    }
-
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
-        this->type = ROUTE_REPLY;
-        this->srcAddr = srcAddr;
-        this->destAddr = destAddr;
-        this->srcSeqNum = srcSeqNum;
-        this->destSeqNum = destSeqNum;
-        this->hash = hash;
-        this->hopCount = hopCount;
-        this->HERR = HERR;
-    }
-
-    string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"srcAddr", this->srcAddr},
-            {"destAddr", this->destAddr},
-            {"intermediateAddr", this->intermediateAddr},
-            {"srcSeqNum", this->srcSeqNum},
-            {"destSeqNum", this->destSeqNum},
-            {"hash", this->hash},
-            {"hopCount", this->hopCount},
-            {"HERR", this->HERR}
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->srcAddr = j["srcAddr"];
-        this->destAddr = j["destAddr"];
-        this->intermediateAddr = j["intermediateAddr"];
-        this->srcSeqNum = j["srcSeqNum"];
-        this->destSeqNum = j["destSeqNum"];
-        this->hash = j["hash"];
-        this->hopCount = j["hopCount"];
-        this->HERR = j["HERR"];
-    }
-
-};
-
-struct INIT_MESSAGE : public MESSAGE {
-    string hash;
-    string srcAddr;
-
-    INIT_MESSAGE() {
-        this->type = INIT_MSG;
-        hash = "";
-        srcAddr = "";
-    }
-
-    INIT_MESSAGE(string hash, string addr) {
-        this->type = INIT_MSG;
-        this->hash = hash;
-        this->srcAddr = addr;
-    }
-
-    string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"hash", this->hash},
-            {"srcAddr", this->srcAddr}
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->hash = j["hash"];
-        this->srcAddr = j["srcAddr"];
-    }
-    
-};
-
 struct ROUTING_TABLE_ENTRY {
+    /*TODO: Add TESLA MAC QUEUE and ENSUING INFORMATION AND NEW VARIABLE OF HOW OFTEN THIS TABLE GETS CLEANED UP*/
     string destAddr;
     string nextHopID; // srcAddr = destAddr if neighbor
     int seqNum; // the destinations seqNum
     int cost; // The inital cost to reach the destination (?)
     int ttl;
+    string tesla_hash;
+    std::chrono::seconds tesla_disclosure_time;
     string hash;
+    bool has_mac = false; // tells us if we are waiting for a haskey to decrypt a mac message for this node
 
     ROUTING_TABLE_ENTRY(){
         this->destAddr = "ERR";
@@ -250,6 +49,8 @@ struct ROUTING_TABLE_ENTRY {
         this->cost = -1;
         this->ttl = -1;
         this->hash = "";
+        this->tesla_hash = "ERR";
+        this->tesla_disclosure_time = std::chrono::seconds(0);
     }
 
     ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, int ttl, string hash){
@@ -264,17 +65,22 @@ struct ROUTING_TABLE_ENTRY {
     void print() {
         cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl << ", hash: " << hash << endl;
     }
+
+    std::tuple<string, std::chrono::seconds> getTeslaInfo() {
+        if (tesla_hash.compare("ERR") == 0 || tesla_disclosure_time.count() == 0) {
+            throw std::runtime_error("TESLA info not found");
+        }
+        return std::make_tuple(tesla_hash, tesla_disclosure_time);
+    }
+
+    void setTeslaInfo(string hash, std::chrono::seconds ttl) {
+        this->tesla_hash = hash;
+        this->tesla_disclosure_time = ttl;
+    }
 };
 
 class drone {
     public: // everything public for now
-        string addr;
-        int port;
-        unsigned long seqNum;
-        int nodeID;
-        std::unordered_map<string, ROUTING_TABLE_ENTRY> routingTable; // droneID, routingTableEntry | Can replace with int as key
-        std::deque<string> hashChainCache; // I dont know if we want to actually store them or not 
-
         drone(){
             this->addr = -1;
             this->port = -999;
@@ -282,12 +88,60 @@ class drone {
             this->seqNum = 0;
         }
 
-        drone(string addr, int port, int nodeID){
+        drone(int port, int nodeID){
+            cout << "Drone constructor called" << endl;
             this->addr = "drone" + std::to_string(nodeID) + "-service.default";
             this->port = port;
             this->nodeID = nodeID;
             this->seqNum = 0;
         }
+        string addr;
+        int port;
+        unsigned long seqNum;
+        int nodeID;
+        std::deque<string> hashChainCache; 
+        class TESLA {
+            struct msg {
+                std::string data; // Type: RERR, assume the data is in string form
+                std::string MAC; // temp: assume MAC is in string form
+                std::chrono::steady_clock::time_point tstamp;
+                msg(string, string, std::chrono::steady_clock::time_point){
+                    this->data = data;
+                    this->MAC = MAC;
+                    this->tstamp = tstamp;
+                }
+                bool operator<(const msg& other) const {
+                    return tstamp > other.tstamp;
+                }
+            };
+
+            public:
+                TESLA();
+                ~TESLA();
+
+                std::unordered_map<string, ROUTING_TABLE_ENTRY> routingTable;
+                const unsigned int disclosure_time = 10; // every 10 seconds (hard coded value)
+
+                TESLA_MESSAGE init_tesla(const string&);
+                // need function to disclose hashes ever t
+                std::string hash_disclosure();
+                // need to function that actually allows us to send messages with MACs
+                void recv(json&);
+                std::set<msg> mac_q;
+            private:
+                string addr;
+                const unsigned int key_lifetime = 10800; // 10800 seconds
+                const unsigned int numKeys = key_lifetime / disclosure_time;
+                // unsigned char (*hashChain)[SHA256_DIGEST_LENGTH];
+                std::vector<std::string> hash_chain;
+
+                void send(int);
+                std::string createHMAC(const std::string& key, const std::string& data);
+                void generateHashChain();
+                void compareHashes(const unsigned char *hash1, const unsigned char *hash2);
+        };
+
+        TESLA tesla;
 
         int broadcastMessage(const string& msg);
         void sendData(string containerName, const string& msg);
@@ -298,7 +152,6 @@ class drone {
         void routeReplyHandler(json& data);
         void routeErrorHandler(MESSAGE &msg);
         void clientResponseThread(int newSD, const string& msg);
-
         void initRouteDiscovery(json& data);
         void verifyRouteHandler(json& data);
     private:

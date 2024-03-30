@@ -2,7 +2,7 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add --no-cache g++ bind-tools make cmake git
+RUN apk add g++ bind-tools make cmake git
 
 COPY gcs/*.cpp gcs/*.hpp gcs/CMakeLists.txt /app/
 
