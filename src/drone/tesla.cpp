@@ -50,23 +50,34 @@ drone::TESLA::~TESLA() {
     // delete[] hashChain;
 }
 
+std::string drone::TESLA::sha256(const std::string& inn) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, inn.c_str(), inn.size());
+    SHA256_Final(hash, &sha256);
+    std::stringstream ss;
+    for(int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+    return ss.str();
+}
+
 void drone::TESLA::generateHashChain() {
     /* Assumptions: We are not doing any wrap arounds for now
     New key is disclosed every **disclosure_time** seconds
     numKeys  = lifetime / disclosure_time
     */
-
     unsigned char buffer[56];
     RAND_bytes(buffer, sizeof(buffer));
-    memcpy(&this->hash_chain[0][0], buffer, SHA256_DIGEST_LENGTH);
-
-    for (unsigned int i = 1; i < numKeys; i++) {
-        unsigned char prevHash[SHA256_DIGEST_LENGTH];
-        memcpy(prevHash, this->hash_chain[i - 1].data(), SHA256_DIGEST_LENGTH);
-        SHA256_CTX ctx;
-        SHA256_Init(&ctx);
-        SHA256_Update(&ctx, prevHash, SHA256_DIGEST_LENGTH);
-        SHA256_Final(reinterpret_cast<unsigned char*>(&this->hash_chain[i][0]), &ctx);
+    std::stringstream ss;
+    for (int i = 0; i < sizeof(buffer); ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(buffer[i]);
+    }
+    string hash = ss.str();
+    for (int i = 0; i < numKeys; ++i) {
+        hash = sha256(hash);
+        this->hash_chain.push_front(hash);
+        // cout << "Hash: " << hash << endl;
     }
 }
 

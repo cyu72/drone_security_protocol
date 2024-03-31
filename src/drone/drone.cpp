@@ -341,11 +341,11 @@ int main(int argc, char* argv[]) {
     }
 
     
-    // std::thread setupThread([&node]() {
-    //     cout << "Created a thread" << endl;
-    //     node.setupPhase();
-    // });
-    // setupThread.detach();
+    std::thread setupThread([&node]() {
+        cout << "Created a thread" << endl;
+        node.setupPhase();
+    });
+    setupThread.detach();
     //// Setup End
 
     cout << "Entering server loop " << endl;

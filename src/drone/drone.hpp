@@ -133,9 +133,10 @@ class drone {
                 const unsigned int key_lifetime = 10800; // 10800 seconds
                 const unsigned int numKeys = key_lifetime / disclosure_time;
                 // unsigned char (*hashChain)[SHA256_DIGEST_LENGTH];
-                std::vector<std::string> hash_chain;
+                std::deque<std::string> hash_chain;
 
                 void send(int);
+                std::string sha256(const std::string&);
                 std::string createHMAC(const std::string& key, const std::string& data);
                 void generateHashChain();
                 void compareHashes(const unsigned char *hash1, const unsigned char *hash2);
