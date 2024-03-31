@@ -99,7 +99,7 @@ void initalizeServer(){
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Exit " << endl; // tests built with assumptions made on # of drones & distances
+        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Exit " << endl; // tests built with assumptions made on # of drones & distances
         cout << "> ";
         std::cin >> inn; 
         // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
@@ -131,6 +131,10 @@ void initalizeServer(){
                 sendData(containerName, jsonStr);
                 break;
             case 3:
+                cout << "Enter drone ID [number]: ";
+                std::cin >> inn1;
+                 
+            case 4:
                 return;
             default:
                 break;

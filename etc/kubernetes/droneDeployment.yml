@@ -19,21 +19,32 @@ spec:
         - name: PARAM3
           value: "1"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone1-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone1
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30001
 ---
 apiVersion: v1
 kind: Pod
@@ -56,21 +67,32 @@ spec:
         - name: PARAM3
           value: "2"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone2-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone2
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30002
 ---
 apiVersion: v1
 kind: Pod
@@ -93,21 +115,32 @@ spec:
         - name: PARAM3
           value: "3"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone3-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone3
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30003
 ---
 apiVersion: v1
 kind: Pod
@@ -130,21 +163,32 @@ spec:
         - name: PARAM3
           value: "4"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone4-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone4
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30004
 ---
 apiVersion: v1
 kind: Pod
@@ -167,21 +211,32 @@ spec:
         - name: PARAM3
           value: "5"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone5-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone5
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30005
 ---
 apiVersion: v1
 kind: Pod
@@ -204,21 +259,32 @@ spec:
         - name: PARAM3
           value: "6"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone6-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone6
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30006
 ---
 apiVersion: v1
 kind: Pod
@@ -241,21 +307,32 @@ spec:
         - name: PARAM3
           value: "7"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone7-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone7
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30007
 ---
 apiVersion: v1
 kind: Pod
@@ -278,21 +355,32 @@ spec:
         - name: PARAM3
           value: "8"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone8-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone8
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30008
 ---
 apiVersion: v1
 kind: Pod
@@ -315,21 +403,32 @@ spec:
         - name: PARAM3
           value: "9"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone9-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone9
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30009
 ---
 apiVersion: v1
 kind: Pod
@@ -352,21 +451,32 @@ spec:
         - name: PARAM3
           value: "10"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone10-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone10
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30010
 ---
 apiVersion: v1
 kind: Pod
@@ -389,21 +499,32 @@ spec:
         - name: PARAM3
           value: "11"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone11-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone11
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30011
 ---
 apiVersion: v1
 kind: Pod
@@ -426,21 +547,32 @@ spec:
         - name: PARAM3
           value: "12"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone12-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone12
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30012
 ---
 apiVersion: v1
 kind: Pod
@@ -463,21 +595,32 @@ spec:
         - name: PARAM3
           value: "13"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone13-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone13
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30013
 ---
 apiVersion: v1
 kind: Pod
@@ -500,21 +643,32 @@ spec:
         - name: PARAM3
           value: "14"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone14-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone14
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30014
 ---
 apiVersion: v1
 kind: Pod
@@ -537,206 +691,32 @@ spec:
         - name: PARAM3
           value: "15"
       ports:
-        - protocol: UDP
+        - name: action-port
+          protocol: UDP
           containerPort: 65456
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: drone15-service
 spec:
+  type: LoadBalancer
   selector:
     app: drone15
     tier: drone
   ports:
-  - protocol: UDP
+  - name: drone-port
+    protocol: UDP
     port: 80
     targetPort: 65456
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone16
-  namespace: default
-  labels:
-    app: drone16
-    tier: drone
-spec:
-  hostname: drone16
-  containers: 
-    - name: drone16
-      image: cyu72/drone:latest
-      env:
-        - name: PARAM1
-          value: "drone16"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "16"
-      ports:
-        - protocol: UDP
-          containerPort: 65456
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone16-service
-spec:
-  selector:
-    app: drone16
-    tier: drone
-  ports:
-  - protocol: UDP
-    port: 80
-    targetPort: 65456
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone17
-  namespace: default
-  labels:
-    app: drone17
-    tier: drone
-spec:
-  hostname: drone17
-  containers: 
-    - name: drone17
-      image: cyu72/drone:latest
-      env:
-        - name: PARAM1
-          value: "drone17"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "17"
-      ports:
-        - protocol: UDP
-          containerPort: 65456
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone17-service
-spec:
-  selector:
-    app: drone17
-    tier: drone
-  ports:
-  - protocol: UDP
-    port: 80
-    targetPort: 65456
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone18
-  namespace: default
-  labels:
-    app: drone18
-    tier: drone
-spec:
-  hostname: drone18
-  containers: 
-    - name: drone18
-      image: cyu72/drone:latest
-      env:
-        - name: PARAM1
-          value: "drone18"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "18"
-      ports:
-        - protocol: UDP
-          containerPort: 65456
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone18-service
-spec:
-  selector:
-    app: drone18
-    tier: drone
-  ports:
-  - protocol: UDP
-    port: 80
-    targetPort: 65456
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone19
-  namespace: default
-  labels:
-    app: drone19
-    tier: drone
-spec:
-  hostname: drone19
-  containers: 
-    - name: drone19
-      image: cyu72/drone:latest
-      env:
-        - name: PARAM1
-          value: "drone19"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "19"
-      ports:
-        - protocol: UDP
-          containerPort: 65456
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone19-service
-spec:
-  selector:
-    app: drone19
-    tier: drone
-  ports:
-  - protocol: UDP
-    port: 80
-    targetPort: 65456
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone20
-  namespace: default
-  labels:
-    app: drone20
-    tier: drone
-spec:
-  hostname: drone20
-  containers: 
-    - name: drone20
-      image: cyu72/drone:latest
-      env:
-        - name: PARAM1
-          value: "drone20"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "20"
-      ports:
-        - protocol: UDP
-          containerPort: 65456
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone20-service
-spec:
-  selector:
-    app: drone20
-    tier: drone
-  ports:
-  - protocol: UDP
-    port: 80
-    targetPort: 65456
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30015
 ---
 apiVersion: v1
 kind: Pod
@@ -758,15 +738,15 @@ spec:
           containerPort: 65456
 ---
 apiVersion: v1
-kind: Service
+kind: ConfigMap
 metadata:
-  name: drone-broadcast-service
-  namespace: default
-spec:
-  clusterIP: None
-  selector:
-    tier: drone
-  ports:
-    - protocol: UDP
-      port: 80
-      targetPort: 65456
+  name: config
+  namespace: metallb-system
+data:
+  config: |
+    address-pools:
+    - name: default
+      protocol: layer2
+      addresses:
+      - 192.168.1.101-192.168.1.150
+

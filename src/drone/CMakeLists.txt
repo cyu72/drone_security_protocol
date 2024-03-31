@@ -34,6 +34,7 @@ enable_testing()
 add_executable(
     drone
     drone.cpp
+    tesla.cpp
 )
 target_link_libraries(
     drone

@@ -6,16 +6,15 @@ import threading
 
 # Generate Manifest Start
 droneNum = int(input("Total number of drones in swarm: "))
-imagePullLocation = int(input("1): DockerHub\n2): Local\nImage pull location: "))
-if imagePullLocation == 1:
-    droneImage = "cyu72/drone:latest"
-    gcsImage = "cyu72/gcs:latest"
-elif imagePullLocation == 2:
-    minikubeIP = input("Minikube IP: ")
-    droneImage = f"""{minikubeIP}:6000/drone:latest
-      imagePullPolicy: IfNotPresent"""
-    gcsImage = f"""{minikubeIP}:6000/gcs:latest
-      imagePullPolicy: IfNotPresent"""
+droneImage = "cyu72/drone:latest"
+gcsImage = "cyu72/gcs:latest"
+
+isMinikube = input("Is Minikube up? (yes/no): ")
+if isMinikube.lower() == "no":
+  subprocess.run("minikube start --network-plugin=cni --cni=calico", shell=True, check=True)
+  subprocess.run("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", shell=True, check=True)
+  subprocess.run("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", shell=True, check=True)
+  subprocess.run("minikube addons enable metallb", shell=True, check=True)
 
 delim = "---\n"
 
@@ -131,12 +130,21 @@ def generate_random_matrix(n, numDrones):
   return matrix
 
 n = 8  # size of the matrix
-matrix = generate_random_matrix(n, droneNum)
+valid_config = False
 
-for row in matrix:
-  for element in row:
-    print("{:2}".format(element), end=' ')
-  print()
+while not valid_config:
+  matrix = generate_random_matrix(n, droneNum)
+
+  for row in matrix:
+    for element in row:
+      print("{:2}".format(element), end=' ')
+    print()
+
+  user_input = input("Is this a valid configuration? (yes/no): ")
+  if user_input.lower() == "yes":
+    valid_config = True
+
+time.sleep(45) # Wait for calico to turn on before applying network policies
 
 with open('etc/kubernetes/deploymentNetworkPolicy.yml', 'w') as file:
     for i in range(len(matrix)):

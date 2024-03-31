@@ -5,7 +5,7 @@ WORKDIR /app
 
 COPY drone/*.cpp drone/*.hpp drone/CMakeLists.txt drone/initScript.py /app/
 
-RUN apk add --no-cache g++ bind-tools make cmake protobuf protobuf-dev gtest-dev git openssl-dev python3 py3-pip
+RUN apk add g++ bind-tools make cmake protobuf protobuf-dev git openssl-dev python3 py3-pip
 
 RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
