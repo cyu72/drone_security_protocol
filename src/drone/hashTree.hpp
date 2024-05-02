@@ -30,10 +30,12 @@ private:
             void setLeft(TreeNode *leftNode) { left = leftNode; }
             void setRight(TreeNode *rightNode){ right = rightNode; }
             string getHash() { return hash; }
+            void updateHash(std::string hash) {this->hash = hash; }
 
     };
     string hashSelf(const string&);
     string hashNodes(const string&, const string&);
+    string recalculate(TreeNode*, const int&, const int&, const string&);
     TreeNode *root;
 
 public:
@@ -72,7 +74,8 @@ public:
     }
 
     bool verifyTree(string&);
-    void addSelf(string&);
+    TreeNode* getRoot() { return root; }
+    void addSelf(const string&, const int&);
     std::vector<string> toVector();
 };
 

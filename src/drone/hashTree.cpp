@@ -46,11 +46,9 @@ string HashTree::hashSelf(const string& data) {
     SHA256((unsigned char *)data.c_str(), data.size(), hash);
 
     std::stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
-    {
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
         ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
     }
-
     return ss.str();
 }
 
@@ -163,7 +161,6 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
                 currNode = new TreeNode(lastCalculatedHash, true);
                 currNode->setLeft(prev);
             } else {
-                cout << prevLevel << std::endl;
                 lastCalculatedHash = hashNodes(hashesArray[numElements - 1], lastCalculatedHash);
                 currNode = new TreeNode(lastCalculatedHash, true);
                 currNode->setLeft(new TreeNode(hashesArray[numElements - 1], true));
@@ -209,9 +206,70 @@ bool HashTree::verifyTree(string& recvHash){
     return false;
 }
 
-void HashTree::addSelf(string& droneName){
+void HashTree::addSelf(const string& droneID, const int& incomingHopCount){
+    /* Adds a new node to the tree. 
+    Takes in self drone id and the hopCount after adding the currentNode*/
 
+    int height = std::floor(std::log2(incomingHopCount));
+    string finalHash = recalculate(this->getRoot(), height, incomingHopCount, droneID);
+    cout << "This is the final root hash: " << finalHash << endl;
 }
+
+string HashTree::recalculate(TreeNode* node, const int& height, const int& incomingHopCount, const string& droneID){
+    /* Parameters: A node (starts with the root), (Int) height left to go in tree before we reach leaves
+    Recursive function to recalculate a node, given that its children nodes have been updated
+    Returns a string of the newly calculated hash*/
+
+    string newHash;
+    int currHeight = height;
+    bool lrflag; // true = left
+
+    if (currHeight > 0) {
+        currHeight--;
+        if (node->right != nullptr){
+            newHash = recalculate(node->right, currHeight, incomingHopCount, droneID);
+            lrflag = false;
+        } 
+        else {
+            newHash = recalculate(node->left, currHeight, incomingHopCount, droneID);
+            lrflag = true;
+        }
+    }
+
+    if (currHeight == 0) { // base case: we are parent nodes of leaf
+        // check if we are a (new) left node or we are a right node
+        // need to create the new hash & nodes, then update self node
+        cout << "here" << endl;
+        newHash = hashSelf(droneID);
+        if (incomingHopCount % 2 == 0) {
+            node->setRight(new TreeNode(hashSelf(newHash), true)); // right node
+            lrflag = false;
+        }
+        else {
+            node->setLeft(new TreeNode(hashNodes(node->left->getHash(), newHash), true));
+            lrflag = true;
+        }
+    }
+
+    // case: we are a node that needs to be recalculated
+    if (lrflag) newHash = hashSelf(newHash); 
+    else newHash = hashNodes(node->left->getHash(), newHash);
+    node->updateHash(newHash);
+
+    return newHash;
+    // TODO: Edge case when we are starting a whole new subtree
+}
+
+// bool HashTree::checkSubtreeDirection(const int& hopCount){
+//     /*Determines if the current node is in the left or right subtree
+//     Returns true if left, false if right*/
+//     double n = std::ceil(std::log2(hopCount));
+//     double y = std::pow(2, n) / 2;
+//     if (hopCount > (y + y/2)){ // if greater than the middle point, in right subtree
+//         return false;
+//     }
+//     return true;
+// }
 
 std::vector<string> HashTree::toVector(){
     /*Returns a vector of only the elements required to rebuild the tree*/
