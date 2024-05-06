@@ -35,8 +35,9 @@ private:
     };
     string hashSelf(const string&);
     string hashNodes(const string&, const string&);
-    string recalculate(TreeNode*, const int&, const int&, const string&);
+    string recalculate(TreeNode*, const int&, const int&, const int&, const int&, const int&, const string&);
     TreeNode *root;
+    void setRoot(TreeNode* node) {this->root = node;}
 
 public:
     // case1: first time init tree

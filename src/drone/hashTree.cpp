@@ -210,44 +210,65 @@ void HashTree::addSelf(const string& droneID, const int& incomingHopCount){
     /* Adds a new node to the tree. 
     Takes in self drone id and the hopCount after adding the currentNode*/
 
-    int height = std::floor(std::log2(incomingHopCount));
-    string finalHash = recalculate(this->getRoot(), height, incomingHopCount, droneID);
-    cout << "This is the final root hash: " << finalHash << endl;
+    int leafLevel = std::ceil(std::log2(incomingHopCount));
+    int totalAvailableNodes = std::pow(2, leafLevel) / 2;
+    
+    // Edge Case: Incoming Hop Count is 2
+    if (incomingHopCount == 2){
+        this->getRoot()->left = new TreeNode(this->getRoot()->getHash(), true);
+        this->getRoot()->right = new TreeNode(hashSelf(droneID), true);
+        this->getRoot()->updateHash(hashNodes(this->getRoot()->left->getHash(), this->getRoot()->right->getHash()));
+        return;
+    }
+
+    // Edge Case: We must generate a new tree (new root)
+    int n = incomingHopCount - 1;
+    if ((n & (n - 1)) == 0) { // Check if its a power of 2
+        TreeNode* newRoot = new TreeNode("ERR: TEMP ROOT HASH", true);
+        TreeNode* newRight = new TreeNode("ERR: NULL HASH", true);
+        newRoot->left = this->getRoot(); newRoot->right = newRight; this->setRoot(newRoot); 
+        
+    }
+
+    string finalHash = recalculate(this->getRoot()->right, (totalAvailableNodes / 2), totalAvailableNodes + 1, totalAvailableNodes + (totalAvailableNodes / 2) + 1, leafLevel - 1, incomingHopCount, droneID);
+    string rootHash = hashNodes(this->getRoot()->left->getHash(), finalHash);
+    this->getRoot()->updateHash(rootHash);
+    cout << "This is the final root hash: " << rootHash << endl;
 }
 
-string HashTree::recalculate(TreeNode* node, const int& height, const int& incomingHopCount, const string& droneID){
-    /* Parameters: A node (starts with the root), (Int) height left to go in tree before we reach leaves
+string HashTree::recalculate(TreeNode* node, const int& nodesAvail, const int& leftIndex, const int& rightIndex, const int& leafLevel, const int& incomingHopCount, const string& droneID){
+    /* Parameters: A node (starts with the root), (Int) leafLevel left to go in tree before we reach leaves
     Recursive function to recalculate a node, given that its children nodes have been updated
     Returns a string of the newly calculated hash*/
 
     string newHash;
-    int currHeight = height;
     bool lrflag; // true = left
 
-    if (currHeight > 0) {
-        currHeight--;
-        if (node->right != nullptr){
-            newHash = recalculate(node->right, currHeight, incomingHopCount, droneID);
+    // Generalized case: calculate the range and choose which path to choose based on range
+    if (leafLevel > 1) {
+        if (incomingHopCount >= rightIndex){ // Enter right tree
+            if (node->right == nullptr) node->right = new TreeNode("ERR: NULL HASH", true);
+            newHash = recalculate(node->right, nodesAvail / 2, leftIndex + (nodesAvail / 2), rightIndex, leafLevel - 1, incomingHopCount, droneID);
             lrflag = false;
-        } 
-        else {
-            newHash = recalculate(node->left, currHeight, incomingHopCount, droneID);
+        } else {
+            if (node->left == nullptr) node->left = new TreeNode("ERR: NULL HASH", true);
+            newHash = recalculate(node->left, nodesAvail / 2, leftIndex, rightIndex - (nodesAvail / 2), leafLevel - 1, incomingHopCount, droneID);
             lrflag = true;
         }
     }
 
-    if (currHeight == 0) { // base case: we are parent nodes of leaf
-        // check if we are a (new) left node or we are a right node
-        // need to create the new hash & nodes, then update self node
-        cout << "here" << endl;
+    if (leafLevel == 1) { // base case: we are parent nodes of leaf
+        // Check if we are a (new) left node or we are a right node
+        // Need to create the new hash & nodes, then update self node
         newHash = hashSelf(droneID);
-        if (incomingHopCount % 2 == 0) {
-            node->setRight(new TreeNode(hashSelf(newHash), true)); // right node
+
+        if (incomingHopCount % 2 == 0) {       
+            node->setRight(new TreeNode(newHash, true));
             lrflag = false;
         }
-        else {
-            node->setLeft(new TreeNode(hashNodes(node->left->getHash(), newHash), true));
-            lrflag = true;
+        else {   
+            node->setLeft(new TreeNode(newHash, true));
+            lrflag = true;   
         }
     }
 
@@ -257,7 +278,6 @@ string HashTree::recalculate(TreeNode* node, const int& height, const int& incom
     node->updateHash(newHash);
 
     return newHash;
-    // TODO: Edge case when we are starting a whole new subtree
 }
 
 // bool HashTree::checkSubtreeDirection(const int& hopCount){
