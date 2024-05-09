@@ -22,6 +22,7 @@
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <chrono>
+#include <ctime>
 #include "hashTree.hpp"
 #include "messages.hpp"
 
@@ -53,13 +54,14 @@ struct ROUTING_TABLE_ENTRY {
         this->tesla_disclosure_time = std::chrono::seconds(0);
     }
 
+    // TODO: Must fix all instances of ttl
     ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, int ttl, string hash){
         this->destAddr = destAddr;
         this->nextHopID = nextHopID;
         this->seqNum = seqNum;
         this->cost = cost;
         this->ttl = ttl;
-        this->hash = hash;
+        this->hash = hash; // What is this field supposed to contain again
     }
 
     void print() {
@@ -97,6 +99,7 @@ class drone {
         }
         string addr;
         int port;
+        int msgTTL = 3; // Hardcoded value for message ttl
         unsigned long seqNum;
         int nodeID;
         std::deque<string> hashChainCache; 

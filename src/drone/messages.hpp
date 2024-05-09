@@ -83,9 +83,11 @@ struct RREQ : public MESSAGE {
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
     string hash;
+    string rootHash;
     std::vector<string> hashTree; // can optimize later to use memory more efficiently
     unsigned long hopCount;
     int HERR; // temp placeholder for what HERR should be
+    int ttl;
 
     RREQ() {
         this->type = ROUTE_REQUEST;
@@ -94,12 +96,15 @@ struct RREQ : public MESSAGE {
         this->hash = "";
         this->hopCount = 0;
         this->HERR = 0;
+        this->rootHash = "";
         this->hashTree = {};
+        this->ttl = 0;
     }
 
-    RREQ(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, std::vector<string> hashTree) {
+    RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, std::vector<string> hashTree, int ttl, string rootHash) {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr;
+        this->intermediateAddr = interAddr;
         this->destAddr = destAddr;
         this->srcSeqNum = srcSeqNum;
         this->destSeqNum = destSeqNum;
@@ -107,6 +112,8 @@ struct RREQ : public MESSAGE {
         this->hopCount = hopCount;
         this->HERR = HERR;
         this->hashTree = hashTree;
+        this->ttl = ttl;
+        this->rootHash = rootHash; // Can delete this field later; meant for testing; must replace with hashTree[0] in code tho
     }
 
     string serialize() const override {
@@ -120,7 +127,9 @@ struct RREQ : public MESSAGE {
             {"hash", this->hash},
             {"hopCount", this->hopCount},
             {"HERR", this->HERR},
-            {"hashTree", this->hashTree}
+            {"hashTree", this->hashTree},
+            {"ttl", this->ttl},
+            {"rootHash", this->rootHash}
 
         };
         return j.dump();
@@ -137,6 +146,8 @@ struct RREQ : public MESSAGE {
         this->hopCount = j["hopCount"];
         this->HERR = j["HERR"];
         this->hashTree = j["hashTree"].get<std::vector<string>>();
+        this->ttl = j["ttl"];
+        this->rootHash = j["rootHash"];
     }
 };
 
@@ -149,6 +160,7 @@ struct RREP : public MESSAGE {
     string hash;
     unsigned long hopCount;
     int HERR; // temp placeholder for what HERR should be
+    int ttl;
 
     RREP() {
         this->type = ROUTE_REPLY;
@@ -157,9 +169,10 @@ struct RREP : public MESSAGE {
         this->hash = "";
         this->hopCount = 0;
         this->HERR = 0;
+        this->ttl = 0;
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR) {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, int ttl) {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -168,6 +181,7 @@ struct RREP : public MESSAGE {
         this->hash = hash;
         this->hopCount = hopCount;
         this->HERR = HERR;
+        this->ttl = ttl;
     }
 
     string serialize() const override {
@@ -180,7 +194,8 @@ struct RREP : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"HERR", this->HERR}
+            {"HERR", this->HERR},
+            {"ttl", this->ttl}
         };
         return j.dump();
     }
@@ -195,6 +210,7 @@ struct RREP : public MESSAGE {
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
         this->HERR = j["HERR"];
+        this->ttl = j["ttl"];
     }
 
 };
