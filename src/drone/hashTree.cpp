@@ -67,10 +67,9 @@ HashTree::HashTree(std::vector<string> hashesArray, int hopCount, string sourceA
 
     if (hopCount == 1){ // edgecase for constructing from one hash
         lastElementHash = hashSelf(sourceAddr);
-        lastCalculatedHash = hashNodes(lastElementHash, lastElementHash);
-        currNode = new TreeNode(lastCalculatedHash, true);
-        currNode->setLeft(new TreeNode(lastElementHash, true));
+        currNode = new TreeNode(lastElementHash, true);
         root = currNode;
+        return;
     } else if (hopCount == 2) { // edgecase for constructing from two hashes
         lastElementHash = hashSelf(sourceAddr);
         lastCalculatedHash = hashNodes(hashesArray[1], lastElementHash);
@@ -273,7 +272,7 @@ string HashTree::recalculate(TreeNode* node, const int& nodesAvail, const int& l
     }
 
     // case: we are a node that needs to be recalculated
-    if (lrflag) newHash = hashSelf(newHash); 
+    if (lrflag) newHash = hashNodes(newHash, newHash); 
     else newHash = hashNodes(node->left->getHash(), newHash);
     node->updateHash(newHash);
 
