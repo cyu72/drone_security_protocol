@@ -1,5 +1,8 @@
 #include "drone.hpp"
 
+std::chrono::high_resolution_clock::time_point globalStartTime;
+std::chrono::high_resolution_clock::time_point globalEndTime;
+
 void drone::clientResponseThread(int newSD, const string& buffer){
     /* function to handle all incoming messages from the client
     check what type of message it is; launch the function to handle whatever type it is */
@@ -113,6 +116,7 @@ void drone::initRouteDiscovery(json& data){
     msg.hashTree = tree.toVector();
     msg.rootHash = tree.getRoot()->hash;
 
+    globalStartTime = std::chrono::high_resolution_clock::now();
     string buf = msg.serialize();
     int res = this->broadcastMessage(buf);
     if (res == 0){
@@ -144,12 +148,12 @@ void drone::routeRequestHandler(json& data){
 
     if (msg.srcAddr == this->addr) return; // Drop Packet Condition: If the srcAddr is the same as the current node
     // TODO: Add case to drop packet if this RREQ has already been seen
-    if (msg.ttl == 0) return; // Drop Packet Condition: If the ttl is 0
-    if (this->tesla.routingTable.find(msg.intermediateAddr) != this->tesla.routingTable.end()){
-        if (msg.srcSeqNum < this->tesla.routingTable[msg.intermediateAddr].seqNum) return; // Drop Packet Condition: If the seqNum is less than the seqNum already received
+    // if (msg.ttl == 0) return; // Drop Packet Condition: If the ttl is 0
+    if (this->tesla.routingTable.find(msg.srcAddr) != this->tesla.routingTable.end() && this->tesla.routingTable.find(msg.intermediateAddr) != this->tesla.routingTable.end()){
+        if (msg.srcSeqNum <= this->tesla.routingTable[msg.srcAddr].seqNum) return; // Drop Packet Condition: If the seqNum is less than the seqNum already received
         string hashRes = msg.hash;
         int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
-        for (int i = this->tesla.routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
+        for (int i = 1; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
             cout << "Calculated Hash " << hashRes << endl;
         }
@@ -198,15 +202,14 @@ void drone::routeRequestHandler(json& data){
         msg.hopCount++;
         msg.ttl--;
 
-        auto it = this->tesla.routingTable.find(msg.destAddr); // Note: What is destSeqNum even used for again????
+        auto it = this->tesla.routingTable.find(msg.destAddr);
         if (it != this->tesla.routingTable.end()) {
             msg.destSeqNum = this->tesla.routingTable[msg.destAddr].seqNum;
         } else {
             msg.destSeqNum = this->seqNum;
-            // this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, msg.hopCount, 10, msg.hash); // TODO: Check what is the hash field supposed to contain again?
         }
         cout << "Adding to routing table. " << this->tesla.routingTable[msg.srcAddr].destAddr << " " << this->tesla.routingTable[msg.srcAddr].nextHopID << " " << this->tesla.routingTable[msg.srcAddr].seqNum << " " << this->tesla.routingTable[msg.srcAddr].cost << " " << this->tesla.routingTable[msg.srcAddr].hash << endl;
-        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, msg.hopCount, 10, msg.hash); // TODO: Check what is the hash field supposed to contain again?
+        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: DONT UPDATE THE HASH HERE LEAVE IT
         cout << "Added to routing table." << this->tesla.routingTable[msg.srcAddr].destAddr << " " << this->tesla.routingTable[msg.srcAddr].nextHopID << " " << this->tesla.routingTable[msg.srcAddr].seqNum << " " << this->tesla.routingTable[msg.srcAddr].cost << " " << this->tesla.routingTable[msg.srcAddr].hash << endl;
 
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
@@ -215,9 +218,6 @@ void drone::routeRequestHandler(json& data){
         tree.addSelf(this->addr, msg.hopCount);
         msg.hashTree = tree.toVector();
         msg.rootHash = tree.getRoot()->hash;
-
-        // TODO: Add the origin (source) addr as a possible destination that we can reach to routing table, with the node we recieved it from as the previous 
-        // or am i already do it in line 207? Wait what am i doing in line 207
 
         msg.intermediateAddr = this->addr;
         string buf = msg.serialize();
@@ -256,6 +256,8 @@ void drone::routeReplyHandler(json& data){
     if (msg.destAddr == this->addr){ 
         this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash);
         cout << "Successfully completed route" << endl;
+        globalEndTime = std::chrono::high_resolution_clock::now();
+        cout << "Elapsed Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(globalEndTime - globalStartTime).count() << " ms" << endl;
         return;
     } else {
         cout << "Forwarding RREP to next hop." << endl;
