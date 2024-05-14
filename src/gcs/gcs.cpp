@@ -6,18 +6,11 @@ void signalHandler(int signum) {
     exit(signum);
 }
 
-void exitHandler(MESSAGE& msg){ // TODO: update the broadcast for this function
-    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+void exitHandler(MESSAGE& msg) { // TODO: update the broadcast for this function
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         std::cerr << "Error in socket creation." << endl;
         exit(EXIT_FAILURE);
-    }
-
-    int broadcastEnable = 1;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) == -1) {
-        perror("setsockopt");
-        close(sockfd);
-        return;
     }
 
     struct sockaddr_in broadcastAddress;
@@ -26,19 +19,27 @@ void exitHandler(MESSAGE& msg){ // TODO: update the broadcast for this function
     broadcastAddress.sin_port = htons(PORT_NUMBER);
     inet_pton(AF_INET, "172.18.255.255", &(broadcastAddress.sin_addr)); // TODO: Automate retrieving this docker network address
 
-    ssize_t bytesSent = sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress));
-    if (bytesSent == -1) {
-        perror("sendto");
+    if (connect(sockfd, (struct sockaddr*)&broadcastAddress, sizeof(broadcastAddress)) == -1) {
+        perror("connect");
+        close(sockfd);
+        return;
     }
+
+    ssize_t bytesSent = send(sockfd, &msg, sizeof(msg), 0);
+    if (bytesSent == -1) {
+        perror("send");
+    }
+
+    close(sockfd);
 }
 
-void sendData(string containerName, string& msg){
+void sendData(const string& containerName, const string& msg) {
     // sends data to drone
     // create message, DNS resolution, then send to drone
     struct addrinfo hints, *result;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET; // Use IPv4
-    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_socktype = SOCK_STREAM; // Use TCP
     
     int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
     if (status != 0) {
@@ -53,8 +54,14 @@ void sendData(string containerName, string& msg){
         return;
     }
 
-    // cout << msg << endl;
-    ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
+    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1) {
+        std::cerr << "Error: " << strerror(errno) << endl;
+        close(sockfd);
+        freeaddrinfo(result);
+        return;
+    }
+
+    ssize_t bytesSent = send(sockfd, msg.c_str(), msg.size(), 0);
     if (bytesSent == -1) {
         std::cerr << "Error: " << strerror(errno) << endl;
     }
@@ -63,23 +70,22 @@ void sendData(string containerName, string& msg){
     close(sockfd);
 }
 
-void broadcastMessage(string& msg){
+void broadcastMessage(const string& msg) {
     int swarmSize = 15; // temp hardcode
-    for (int i = 1; i <= swarmSize; ++i){
+    for (int i = 1; i <= swarmSize; ++i) {
         string containerName = "drone" + std::to_string(i) + "-service.default";
         sendData(containerName, msg);
     }
     cout << "Broadcast Message sent." << endl;
 }
 
-void initalizeServer(){
-    int sockfd;
-    struct sockaddr_in server_addr, client_addr;
-    char buffer[BUFFER_SIZE];
+void initializeServer() {
+    int listenSock;
+    struct sockaddr_in server_addr;
 
-    // Create UDP socket
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
+    // Create TCP socket
+    listenSock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenSock < 0) {
         std::cerr << "Error in socket creation." << endl;
         exit(EXIT_FAILURE);
     }
@@ -89,8 +95,13 @@ void initalizeServer(){
     server_addr.sin_port = htons(PORT_NUMBER);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(listenSock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         std::cerr << "Error in binding." << endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(listenSock, 5) < 0) {
+        std::cerr << "Error in listening." << endl;
         exit(EXIT_FAILURE);
     }
 
@@ -102,7 +113,7 @@ void initalizeServer(){
         cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Exit " << endl; // tests built with assumptions made on # of drones & distances
         cout << "> ";
         std::cin >> inn; 
-        // WARNING: THERE IS NO ERROR HANDLING FOR INPROPER INPUTS
+        // WARNING: THERE IS NO ERROR HANDLING FOR IMPROPER INPUTS
         GCS_MESSAGE msg;
         string jsonStr, destAddr;
         switch(inn){
@@ -133,20 +144,18 @@ void initalizeServer(){
             case 3:
                 cout << "Enter drone ID [number]: ";
                 std::cin >> inn1;
-                 
+                // Add deletion functionality here.
+                break;
             case 4:
                 return;
             default:
                 break;
         }       
-        // wait for response from drone
-        std::memset(&msg, 0, sizeof(msg));
     }
 }
 
-
-int main(){
-    // signal(SIGINT, signalHandler);
-    initalizeServer();
+int main() {
+    signal(SIGINT, signalHandler);
+    initializeServer();
     return 0;
 }

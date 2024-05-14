@@ -22,6 +22,7 @@
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <chrono>
+#include <sys/time.h>
 #include <ctime>
 #include "hashTree.hpp"
 #include "messages.hpp"

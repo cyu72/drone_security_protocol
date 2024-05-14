@@ -13,6 +13,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <netdb.h>
+#include <thread>
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;

@@ -10,11 +10,11 @@ void drone::clientResponseThread(int newSD, const string& buffer){
 
     switch(jsonData["type"].get<int>()){
         case ROUTE_REQUEST:
-            cout << "RREQ recieved." << endl;
+            cout << "RREQ received." << endl;
             routeRequestHandler(jsonData);
             break;
         case ROUTE_REPLY:
-            cout << "RREP recieved." << endl;
+            cout << "RREP received." << endl;
             routeReplyHandler(jsonData);
             break;
         case ROUTE_ERROR:
@@ -34,11 +34,11 @@ void drone::clientResponseThread(int newSD, const string& buffer){
             verifyRouteHandler(jsonData);
             break;
         case INIT_MSG:
-            cout << "Init message recieved." << endl;
+            cout << "Init message received." << endl;
             initMessageHandler(jsonData);
             break;
         case TESLA_MSG:
-            cout << "Tesla message recieved." << endl;
+            cout << "Tesla message received." << endl;
             // this->tesla.recv(jsonData);
             break;
         default:
@@ -57,35 +57,49 @@ void drone::verifyRouteHandler(json& data){
     }
 }
 
-void drone::sendData(string containerName, const string& msg){
-    // sends data to drone
-    // create message, DNS resolution, then send to drone
+void drone::sendData(string containerName, const string& msg) {
     struct addrinfo hints, *result;
     std::memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET; // Use IPv4
-    hints.ai_socktype = SOCK_DGRAM;
-    
+    hints.ai_socktype = SOCK_STREAM; // Use TCP
+
     int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
     if (status != 0) {
-        std::cerr << "Error resolving host: " << gai_strerror(status) << endl;
+        std::cerr << "Error resolving host " << containerName << ": " << gai_strerror(status) << std::endl;
         return;
     }
 
     int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
     if (sockfd == -1) {
-        std::cerr << "Error creating socket" << endl;
+        std::cerr << "Error creating socket for " << containerName << std::endl;
         freeaddrinfo(result);
         return;
     }
 
-    ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, (struct sockaddr*) result->ai_addr, result->ai_addrlen);
+    struct timeval timeout;
+    timeout.tv_sec = 5; // Set timeout to 5 seconds
+    timeout.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1) {
+        std::cerr << "Error connecting to " << containerName << ": " << strerror(errno) << std::endl;
+        close(sockfd);
+        freeaddrinfo(result);
+        return;
+    }
+
+    ssize_t bytesSent = send(sockfd, msg.c_str(), msg.size(), 0);
     if (bytesSent == -1) {
-        std::cerr << "Error: " << strerror(errno) << endl;
+        std::cerr << "Error sending message to " << containerName << ": " << strerror(errno) << std::endl;
+    } else {
+        std::cout << "Sent " << bytesSent << " bytes to " << containerName << std::endl;
     }
 
     freeaddrinfo(result);
     close(sockfd);
 }
+
 
 int drone::broadcastMessage(const string& msg){
     /*Sends message to broadcast service rather than using socket broadcast*/
@@ -126,7 +140,7 @@ void drone::initRouteDiscovery(json& data){
 }
 
 void drone::initMessageHandler(json& data){
-    /*Creates a routing table entry for each authenticator recieved*/
+    /*Creates a routing table entry for each authenticator received*/
     INIT_MESSAGE msg;
     msg.deserialize(data);
     // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
@@ -139,7 +153,7 @@ void drone::routeRequestHandler(json& data){
     Conditions checked before forwarding:
     1) If the srcAddr is the same as the current node, drop the packet (To be removed in testing)
     2) If the seqNum is less than the seqNum already received, drop the packet
-    3a) Calculate hash based on hopCount * seqNum (comparison with routing table is optinol because of hash tree)
+    3a) Calculate hash based on hopCount * seqNum (comparison with routing table is optional because of hash tree)
     3b) Calculate hashTree where lastElement = H[droneName || hash] (hash = hashIterations * baseHash) (hashIterations = hopCount * seqNum)
     */
     cout << "Handling RREQ." << endl;
@@ -160,8 +174,8 @@ void drone::routeRequestHandler(json& data){
         if (hashRes != this->tesla.routingTable[msg.intermediateAddr].hash) return; // Drop Packet Condition: If the hash does not match the hash for the seqNum
     }
 
-    // Rebuild hash tree and then check if its correct
-    // TODO: Do a check where we make sure the last node being added is infact the last node placed in the tree
+    // Rebuild hash tree and then check if it's correct
+    // TODO: Do a check where we make sure the last node being added is in fact the last node placed in the tree
     HashTree tree = HashTree(msg.hashTree, msg.hopCount, msg.intermediateAddr);
     tree.printTree(tree.getRoot());
     if (!tree.verifyTree(msg.rootHash)){
@@ -237,7 +251,7 @@ void drone::routeReplyHandler(json& data){
     RREP msg;
     msg.deserialize(data);
 
-    // check sha256(recieved hash) == cached hash for that node
+    // check sha256(received hash) == cached hash for that node
     string hashRes = msg.hash;
     int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
     for (int i = this->tesla.routingTable[msg.intermediateAddr].cost; i < hashIterations; i++) {
@@ -357,14 +371,14 @@ int main(int argc, char* argv[]) {
     drone node(std::stoi(param2), std::stoi(param3)); // env vars for init
     cout << "Drone object created." << endl;
 
-    int sockfd;
-    struct sockaddr_in server_addr, client_addr;
+    int listenSock;
+    struct sockaddr_in server_addr;
     char buffer[5000];
     string msg;
 
     //// Setup Begin
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
+    listenSock = socket(AF_INET, SOCK_STREAM, 0);
+    if (listenSock < 0) {
         std::cerr << "Error in socket creation." << endl;
         exit(EXIT_FAILURE);
     }
@@ -374,12 +388,16 @@ int main(int argc, char* argv[]) {
     server_addr.sin_port = htons(node.port);
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+    if (bind(listenSock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         std::cerr << "Error in binding." << endl;
         exit(EXIT_FAILURE);
     }
 
-    
+    if (listen(listenSock, 5) < 0) {
+        std::cerr << "Error in listening." << endl;
+        exit(EXIT_FAILURE);
+    }
+
     std::thread setupThread([&node]() {
         cout << "Created a thread" << endl;
         node.setupPhase();
@@ -391,9 +409,16 @@ int main(int argc, char* argv[]) {
     while (true) {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
-        ssize_t bytesRead = recvfrom(sockfd, buffer, sizeof(buffer) - 1, 0, (struct sockaddr*)&client_addr, &client_len);
+        int newSock = accept(listenSock, (struct sockaddr*)&client_addr, &client_len);
+        if (newSock < 0) {
+            std::cerr << "Error accepting connection" << endl;
+            continue;
+        }
+
+        ssize_t bytesRead = recv(newSock, buffer, sizeof(buffer) - 1, 0);
         if (bytesRead == -1) {
             std::cerr << "Error receiving data" << endl;
+            close(newSock);
             continue;
         }
 
@@ -406,14 +431,15 @@ int main(int argc, char* argv[]) {
         cout << std::ctime(&timestamp);
         cout << msg << endl;
         // Create a new thread using a lambda function that calls the member function.
-        std::thread([&node, sockfd, &msg](){
-            node.clientResponseThread(sockfd, msg);
+        std::thread([&node, newSock, &msg](){
+            node.clientResponseThread(newSock, msg);
+            close(newSock);
         }).detach();   
 
-        // have some sort of flag to check when we should do route maitence and other timely things?    
+        // have some sort of flag to check when we should do route maintenance and other timely things?    
     }
 
-    close(sockfd);
+    close(listenSock);
 
     return 0;
 }
