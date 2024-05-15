@@ -1,6 +1,7 @@
 #ifndef DRONE_HPP
 #define DRONE_HPP
 #define PORT_NUMBER 80
+#define BRDCST_PORT 65457
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
@@ -159,6 +160,7 @@ class drone {
         void clientResponseThread(int newSD, const string& msg);
         void initRouteDiscovery(json& data);
         void verifyRouteHandler(json& data);
+        void neighborDiscoveryUDPHANDLER();
     private:
         const uint8_t max_hop_count = 8; // hardcoded for a max hop count to be 8; meaning 8 drones can be in a chain at one time
 

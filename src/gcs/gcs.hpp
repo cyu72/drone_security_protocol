@@ -1,6 +1,7 @@
 #ifndef GCS_HPP
 #define GCS_HPP
 #define PORT_NUMBER 80
+#define BRDCST_PORT 65457
 #include <iostream>
 #include <cstring>
 #include <cstdlib>

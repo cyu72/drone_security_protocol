@@ -43,8 +43,11 @@ spec:
           value: "{num}"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -60,9 +63,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -92,8 +99,12 @@ spec:
       stdin: true
       tty: true
       ports:
-        - protocol: UDP
-          containerPort: 65456"""
+        - name: main-port
+          protocol: TCP
+          containerPort: 65456
+        - name: udp-test-port
+          protocol: UDP
+          containerPort: 65457"""
     
     configMap = f"""apiVersion: v1
 kind: ConfigMap

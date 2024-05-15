@@ -33,8 +33,8 @@ void drone::clientResponseThread(int newSD, const string& buffer){
         case VERIFY_ROUTE:
             verifyRouteHandler(jsonData);
             break;
-        case INIT_MSG:
-            cout << "Init message received." << endl;
+        case BRDCST_MSG:
+            cout << "Neighbor Discovery/Broadcast message received." << endl;
             initMessageHandler(jsonData);
             break;
         case TESLA_MSG:
@@ -60,8 +60,8 @@ void drone::verifyRouteHandler(json& data){
 void drone::sendData(string containerName, const string& msg) {
     struct addrinfo hints, *result;
     std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET; // Use IPv4
-    hints.ai_socktype = SOCK_STREAM; // Use TCP
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
     int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
     if (status != 0) {
@@ -77,7 +77,7 @@ void drone::sendData(string containerName, const string& msg) {
     }
 
     struct timeval timeout;
-    timeout.tv_sec = 5; // Set timeout to 5 seconds
+    timeout.tv_sec = 1; // TEMP: Set timeout to 1 seconds
     timeout.tv_usec = 0;
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
     setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
@@ -363,6 +363,56 @@ void drone::setupPhase(){
     // hashDisclosureThread.detach(); // How do I stop a thread later on..?
 }
 
+void drone::neighborDiscoveryUDPHANDLER(){
+    int udp_sock;
+    struct sockaddr_in server_addr, client_addr;
+    char buffer[1024];
+    socklen_t addr_len = sizeof(client_addr);
+
+    // Create UDP socket
+    if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("UDP socket creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Bind the socket to the port
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(BRDCST_PORT);
+
+    if (bind(udp_sock, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("UDP bind failed");
+        close(udp_sock);
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "Listening for UDP messages on port " << BRDCST_PORT << "..." << std::endl;
+
+    while (true) {
+        // Receive message
+        int n = recvfrom(udp_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&client_addr, &addr_len);
+        if (n < 0) {
+            perror("recvfrom failed");
+            break;
+        }
+        buffer[n] = '\0';  // Null-terminate the received data
+
+        // Print received message and sender's address
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+        int client_port = ntohs(client_addr.sin_port);
+        std::cout << "Received UDP message: " << buffer << std::endl;
+        std::cout << "From: " << client_ip << ":" << client_port << std::endl;
+
+        // Utilize the original message format from before to unjsonify the message and recieve it
+        // Also recieve TESLA messages in UDP
+        // This way, we can repurpose setupPhase() function into UDP broadcast function
+    }
+
+    close(udp_sock);
+}
+
 int main(int argc, char* argv[]) {
     cout << "Starting drone." << endl;
     const string param1 = std::getenv("PARAM1");
@@ -405,6 +455,10 @@ int main(int argc, char* argv[]) {
     setupThread.detach();
     //// Setup End
 
+    std::thread udpThread([&node](){
+        node.neighborDiscoveryUDPHANDLER();
+    });
+
     cout << "Entering server loop " << endl;
     while (true) {
         struct sockaddr_in client_addr;
@@ -430,6 +484,14 @@ int main(int argc, char* argv[]) {
         std::time_t timestamp = std::chrono::system_clock::to_time_t(now);
         cout << std::ctime(&timestamp);
         cout << msg << endl;
+
+        // Temp: Used to check IP addresses of recieved message
+        char client_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
+        int client_port = ntohs(client_addr.sin_port);
+
+        std::cout << "Connection accepted from " << client_ip << ":" << client_port << std::endl;
+
         // Create a new thread using a lambda function that calls the member function.
         std::thread([&node, newSock, &msg](){
             node.clientResponseThread(newSock, msg);
