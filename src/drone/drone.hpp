@@ -4,6 +4,7 @@
 #define BRDCST_PORT 65457
 #include <iostream>
 #include <cstring>
+#include <mutex>
 #include <cstdlib>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -12,6 +13,7 @@
 #include <thread>
 #include <set>
 #include <deque>
+#include <queue>
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
@@ -149,21 +151,27 @@ class drone {
 
         TESLA tesla;
 
-        int broadcastMessage(const string& msg);
+        void broadcastUDP(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
         void sendData(string containerName, const string& msg);
-        void setupPhase();
+        int sendDataUDP(const string&, const string&);
         string sha256(const string& inn);
         void initMessageHandler(json& data);
         void routeRequestHandler(json& data);
         void routeReplyHandler(json& data);
         void routeErrorHandler(MESSAGE &msg);
-        void clientResponseThread(int newSD, const string& msg);
+        void clientResponseThread(const string& msg);
         void initRouteDiscovery(json& data);
         void verifyRouteHandler(json& data);
-        void neighborDiscoveryUDPHANDLER();
+        void neighborDiscoveryFunction();
+        void neighborDiscoveryHelper();
     private:
         const uint8_t max_hop_count = 8; // hardcoded for a max hop count to be 8; meaning 8 drones can be in a chain at one time
 
+        std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
+        const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
+        std::mutex helloRecvTimerMutex, routingTableMutex;
+
+        std::queue<std::string> tcpMsgQueue;
 };
 
 #endif

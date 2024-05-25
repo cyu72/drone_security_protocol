@@ -3,7 +3,7 @@
 std::chrono::high_resolution_clock::time_point globalStartTime;
 std::chrono::high_resolution_clock::time_point globalEndTime;
 
-void drone::clientResponseThread(int newSD, const string& buffer){
+void drone::clientResponseThread(const string& buffer){
     /* function to handle all incoming messages from the client
     check what type of message it is; launch the function to handle whatever type it is */
     json jsonData = json::parse(buffer);
@@ -33,7 +33,7 @@ void drone::clientResponseThread(int newSD, const string& buffer){
         case VERIFY_ROUTE:
             verifyRouteHandler(jsonData);
             break;
-        case BRDCST_MSG:
+        case HELLO:
             cout << "Neighbor Discovery/Broadcast message received." << endl;
             initMessageHandler(jsonData);
             break;
@@ -100,18 +100,6 @@ void drone::sendData(string containerName, const string& msg) {
     close(sockfd);
 }
 
-
-int drone::broadcastMessage(const string& msg){
-    /*Sends message to broadcast service rather than using socket broadcast*/
-    int swarmSize = 15; // temp
-    for (int i = 1; i <= swarmSize; ++i){
-        string containerName = "drone" + std::to_string(i) + "-service.default";
-        sendData(containerName, msg);
-    }
-    cout << "Broadcast Message sent." << endl;
-    return 1;
-}
-
 void drone::initRouteDiscovery(json& data){
 // Constructs an RREQ and broadcast to neighbors
 
@@ -132,15 +120,15 @@ void drone::initRouteDiscovery(json& data){
 
     globalStartTime = std::chrono::high_resolution_clock::now();
     string buf = msg.serialize();
-    int res = this->broadcastMessage(buf);
-    if (res == 0){
-        std::cerr << "Error broadcasting message." << endl;
-        return;
-    }
+    this->broadcastUDP(buf);
 }
 
 void drone::initMessageHandler(json& data){
     /*Creates a routing table entry for each authenticator received*/
+    {
+        std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
+        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) return;
+    }
     INIT_MESSAGE msg;
     msg.deserialize(data);
     // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
@@ -236,11 +224,7 @@ void drone::routeRequestHandler(json& data){
         msg.intermediateAddr = this->addr;
         string buf = msg.serialize();
         cout << "forwarding RREQ : " << buf << endl;
-        int res = this->broadcastMessage(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
-        if (res == 0){
-            std::cerr << "Error broadcasting message." << endl;
-            return;
-        }
+        this->broadcastUDP(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
     }
     // update cached seqNum
     cout << "Finished handling RREQ." << endl;
@@ -303,7 +287,75 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
-void drone::setupPhase(){
+int drone::sendDataUDP(const string& containerName, const string& msg) {
+    struct addrinfo hints, *result;
+    std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+
+    int status = getaddrinfo(containerName.c_str(), std::to_string(BRDCST_PORT).c_str(), &hints, &result);
+    if (status != 0) {
+        std::cerr << "Error resolving host: " << gai_strerror(status) << endl;
+        return 0;
+    }
+
+    int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (sockfd == -1) {
+        std::cerr << "Error creating socket" << endl;
+        freeaddrinfo(result);
+        return 0;
+    }
+
+    ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, result->ai_addr, result->ai_addrlen);
+    if (bytesSent == -1) {
+        std::cerr << "Error: " << strerror(errno) << endl;
+        return 0;
+    }
+
+    freeaddrinfo(result);
+    close(sockfd);
+    return 1;
+}
+
+void drone::broadcastUDP(const string& msg){
+    int swarmSize = 15; // temp
+    for (int i = 1; i <= swarmSize; ++i){
+        string containerName = "drone" + std::to_string(i) + "-service.default";
+        sendDataUDP(containerName, msg);
+    }
+    cout << "Broadcast Message sent." << endl;
+}
+
+void drone::neighborDiscoveryHelper(){
+    /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
+    string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
+
+    while(true){
+        sleep(5);
+        {
+            std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
+            helloRecvTimer = std::chrono::steady_clock::now();
+            this->broadcastUDP(msg);
+        }
+        // msg = this->tesla.init_tesla(this->addr).serialize();
+        // this->broadcastUDP(msg);
+        // // Setup a thread that is dedicated to sending out hash disclosures
+        // std::thread hashDisclosureThread([&](){
+        //     while (true) {
+        //         sleep(this->tesla.disclosure_time);
+        //         // build the tesla message
+        //         TESLA_MESSAGE teslaMsg;
+        //         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
+        //         string buf = teslaMsg.serialize();
+        //         this->broadcastUDP(buf);
+        //     }
+        // });
+        // hashDisclosureThread.detach(); // How do I stop a thread later on..?
+    }
+    // Add some check to close this function if drone is closed
+}
+
+void drone::neighborDiscoveryFunction(){
     /* HashChain is generated where the most recent hashes are stored in the front (Eg. 0th index is the most recent hash)
     
     Temp: Hardcoding number of hashes in hashChain (10 seqNums * 8 max hop distance) = 80x hashed
@@ -312,13 +364,11 @@ void drone::setupPhase(){
         
     TODO: Include function that dynamically generates hashChain upon nearing depletion    
         */
-
-    cout << "Setting up drone in setup function." << endl;
-    unsigned char buffer[56];
-    RAND_bytes(buffer, sizeof(buffer));
+    unsigned char hBuf[56];
+    RAND_bytes(hBuf, sizeof(hBuf));
     std::stringstream ss;
-    for (int i = 0; i < sizeof(buffer); ++i) {
-        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(buffer[i]);
+    for (int i = 0; i < sizeof(hBuf); ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hBuf[i]);
     }
     string hash = ss.str();
     for (int i = 0; i < 80; ++i) {
@@ -326,56 +376,18 @@ void drone::setupPhase(){
         this->hashChainCache.push_front(hash);
         // cout << "Hash: " << hash << endl;
     }
-    string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
-    /*Temp code to make all drones start at the same time
-    Waits until the nearest 30 seconds to start code*/
-
-    auto now = std::chrono::system_clock::now();
-    auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    int currSecond = now_sec.time_since_epoch().count() % 60;
-    int secsToWait = 0;
-
-    if (currSecond > 30) {
-        secsToWait = 60 - currSecond + 30;
-    } else {
-        secsToWait = 30 - currSecond;
-    }
-
-    cout << "Waiting for " << secsToWait << " seconds." << endl;
-    sleep(secsToWait);
-    
-    this->broadcastMessage(msg);
-    msg = this->tesla.init_tesla(this->addr).serialize();
-    this->broadcastMessage(msg);
-
-    // // Setup a thread that is dedicated to sending out hash disclosures
-    // std::thread hashDisclosureThread([&](){
-    //     while (true) {
-    //         sleep(this->tesla.disclosure_time);
-    //         // build the tesla message
-    //         TESLA_MESSAGE teslaMsg;
-    //         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
-    //         string buf = teslaMsg.serialize();
-    //         this->broadcastMessage(buf);
-    //     }
-    // });
-    // hashDisclosureThread.detach(); // How do I stop a thread later on..?
-}
-
-void drone::neighborDiscoveryUDPHANDLER(){
+    // UDP setup start
     int udp_sock;
     struct sockaddr_in server_addr, client_addr;
     char buffer[1024];
     socklen_t addr_len = sizeof(client_addr);
 
-    // Create UDP socket
     if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("UDP socket creation failed");
         exit(EXIT_FAILURE);
     }
 
-    // Bind the socket to the port
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -387,10 +399,14 @@ void drone::neighborDiscoveryUDPHANDLER(){
         exit(EXIT_FAILURE);
     }
 
-    std::cout << "Listening for UDP messages on port " << BRDCST_PORT << "..." << std::endl;
+    // Remove timeout and select setup
 
+    auto resetTableTimer = std::chrono::steady_clock::now();
+    std::thread neighborDiscoveryThread([&](){
+        this->neighborDiscoveryHelper();
+    });
+    
     while (true) {
-        // Receive message
         int n = recvfrom(udp_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&client_addr, &addr_len);
         if (n < 0) {
             perror("recvfrom failed");
@@ -398,20 +414,33 @@ void drone::neighborDiscoveryUDPHANDLER(){
         }
         buffer[n] = '\0';  // Null-terminate the received data
 
+        // TODO: Need to process here instead of just printing
         // Print received message and sender's address
         char client_ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
         int client_port = ntohs(client_addr.sin_port);
-        std::cout << "Received UDP message: " << buffer << std::endl;
-        std::cout << "From: " << client_ip << ":" << client_port << std::endl;
+        // std::cout << "Received UDP message: " << buffer << std::endl;
+        // std::cout << "From: " << client_ip << ":" << client_port << std::endl;
+        this->clientResponseThread(buffer);
 
-        // Utilize the original message format from before to unjsonify the message and recieve it
-        // Also recieve TESLA messages in UDP
-        // This way, we can repurpose setupPhase() function into UDP broadcast function
+        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - resetTableTimer).count() >= 30) { // Hardcoded Value: Reset table every 30 seconds
+            this->tesla.routingTable.clear();
+            resetTableTimer = std::chrono::steady_clock::now();
+        }
     }
 
+        /*
+        The Plan: We ourselves, send out a HELLO that recieves broadcast messages, with a ttl or time limit of a certain point so we can't get spoofed messages (Make this a seperate thread from neighbor discovery function?)
+        Repurpose setupFunction() to send broadcast its TESLA message and authenticator hash chain, in doing so broadcasting itself in the process
+        In neighborDiscoveryFunction() we process those messages and add the routing entry for authenticator hash chain and TESLA hash chain, as well as adding to our neighbor list that we have a new (or exisiting neighbor). Ignore message if we already have neighbor
+        - We may also want to reset the list every number of intervals, requiring us to lock the list to prevent sending data to stale neighbors
+        - Issue of generating new hash chain; how does the host node decide when they should create a new hash chain and send it out? In this scenario, should we just always modify our routing entries to accept the latest message? That could end up being a lot of processing
+        */
+
     close(udp_sock);
+    // Add some check to close this function if drone is closed
 }
+
 
 int main(int argc, char* argv[]) {
     cout << "Starting drone." << endl;
@@ -447,16 +476,26 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error in listening." << endl;
         exit(EXIT_FAILURE);
     }
-
-    std::thread setupThread([&node]() {
-        cout << "Created a thread" << endl;
-        node.setupPhase();
-    });
-    setupThread.detach();
     //// Setup End
 
+    /*Temp code to make all drones start at the same time
+    Waits until the nearest 30 seconds to start code*/
+    auto now = std::chrono::system_clock::now();
+    auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    int currSecond = now_sec.time_since_epoch().count() % 60;
+    int secsToWait = 0;
+
+    if (currSecond > 30) {
+        secsToWait = 60 - currSecond + 30;
+    } else {
+        secsToWait = 30 - currSecond;
+    }
+
+    cout << "Waiting for " << secsToWait << " seconds." << endl;
+    sleep(secsToWait);
+
     std::thread udpThread([&node](){
-        node.neighborDiscoveryUDPHANDLER();
+        node.neighborDiscoveryFunction();
     });
 
     cout << "Entering server loop " << endl;
@@ -494,11 +533,10 @@ int main(int argc, char* argv[]) {
 
         // Create a new thread using a lambda function that calls the member function.
         std::thread([&node, newSock, &msg](){
-            node.clientResponseThread(newSock, msg);
             close(newSock);
-        }).detach();   
+            node.clientResponseThread(msg);
+        }).detach();     
 
-        // have some sort of flag to check when we should do route maintenance and other timely things?    
     }
 
     close(listenSock);

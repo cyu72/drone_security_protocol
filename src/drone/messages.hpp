@@ -31,8 +31,7 @@ enum MESSAGE_TYPE {
     DATA,
     INIT_ROUTE_DISCOVERY, // temp
     VERIFY_ROUTE,
-    TEST,
-    INIT_MSG, // used to init drone swarm
+    HELLO, // Broadcast Msg
     TESLA_MSG,
     EXIT
 };
@@ -220,13 +219,13 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
     string srcAddr;
 
     INIT_MESSAGE() {
-        this->type = INIT_MSG;
+        this->type = HELLO;
         hash = "";
         srcAddr = "";
     }
 
     INIT_MESSAGE(string hash, string addr) {
-        this->type = INIT_MSG;
+        this->type = HELLO;
         this->hash = hash;
         this->srcAddr = addr;
     }
