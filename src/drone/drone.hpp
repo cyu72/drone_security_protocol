@@ -29,6 +29,7 @@
 #include <ctime>
 #include "hashTree.hpp"
 #include "messages.hpp"
+#include "mapQueue.hpp"
 
 using json = nlohmann::json;
 using std::cout;
@@ -39,8 +40,8 @@ struct ROUTING_TABLE_ENTRY {
     /*TODO: Add TESLA MAC QUEUE and ENSUING INFORMATION AND NEW VARIABLE OF HOW OFTEN THIS TABLE GETS CLEANED UP*/
     string destAddr;
     string nextHopID; // srcAddr = destAddr if neighbor
-    int seqNum; // the destinations seqNum
-    int cost; // The inital cost to reach the destination (?)
+    int seqNum; // Destination SeqNum
+    int cost; // HopCount to reach destination
     int ttl;
     string tesla_hash;
     std::chrono::seconds tesla_disclosure_time;
@@ -82,6 +83,13 @@ struct ROUTING_TABLE_ENTRY {
     void setTeslaInfo(string hash, std::chrono::seconds ttl) {
         this->tesla_hash = hash;
         this->tesla_disclosure_time = ttl;
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const ROUTING_TABLE_ENTRY& entry) {
+        os << "{ destAddr: " << entry.destAddr << ", nextHopID: " << entry.nextHopID
+           << ", seqNum: " << entry.seqNum << ", cost: " << entry.cost
+           << ", ttl: " << entry.ttl << ", hash: " << entry.hash << " }";
+        return os;
     }
 };
 
@@ -126,7 +134,7 @@ class drone {
                 TESLA();
                 ~TESLA();
 
-                std::unordered_map<string, ROUTING_TABLE_ENTRY> routingTable;
+                MapQueue<string, ROUTING_TABLE_ENTRY> routingTable;
                 const unsigned int disclosure_time = 10; // every 10 seconds (hard coded value)
 
                 TESLA_MESSAGE init_tesla(const string&);

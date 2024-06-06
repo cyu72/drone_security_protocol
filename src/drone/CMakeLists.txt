@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 project(drone)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Add the path to CMake's module path where it can find additional libraries (if needed)
@@ -25,6 +25,7 @@ add_executable(
     drone.cpp
     tesla.cpp
     hashTree.cpp
+    mapQueue.hpp
 )
 target_link_libraries(
     drone
