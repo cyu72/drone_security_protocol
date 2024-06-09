@@ -136,7 +136,7 @@ void drone::initMessageHandler(json& data){
     INIT_MESSAGE msg;
     msg.deserialize(data);
     // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
-    ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 0, 1, 10, msg.hash); // TODO: Incorporate ttl mechanics
+    ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 0, 1, std::chrono::system_clock::now(), msg.hash); // TODO: Incorporate ttl mechanics
     std::lock_guard<std::mutex> lock(this->routingTableMutex);
     this->tesla.routingTable[msg.srcAddr] = entry;
 }
@@ -189,7 +189,7 @@ void drone::routeRequestHandler(json& data){
             rrep.destSeqNum = this->tesla.routingTable.get(msg.destAddr)->seqNum;
         } else {
             rrep.destSeqNum = this->seqNum;
-            this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, 0, 10, msg.hash); // TODO: Check what is the hash field supposed to contain again?
+            this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, 0, std::chrono::system_clock::now(), msg.hash); // TODO: Check what is the hash field supposed to contain again?
         }
 
         rrep.hopCount = 1;
@@ -215,7 +215,7 @@ void drone::routeRequestHandler(json& data){
             msg.destSeqNum = this->seqNum;
         }
         cout << "Adding to routing table. "; this->tesla.routingTable[msg.srcAddr].print();
-        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash); // TODO: DONT UPDATE THE HASH HERE LEAVE IT
+        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash); // TODO: DONT UPDATE THE HASH HERE LEAVE IT
         cout << "Added to routing table."; this->tesla.routingTable[msg.srcAddr].print();
 
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
@@ -258,7 +258,7 @@ void drone::routeReplyHandler(json& data){
     }
 
     if (msg.destAddr == this->addr){ 
-        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, 10, msg.hash);
+        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash);
         cout << "Successfully completed route" << endl;
         globalEndTime = std::chrono::high_resolution_clock::now();
         cout << "Elapsed Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(globalEndTime - globalStartTime).count() << " ms" << endl;
@@ -336,7 +336,16 @@ void drone::neighborDiscoveryHelper(){
     string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(5);
+        sleep(10);
+        {
+            std::lock_guard<std::mutex> lock(this->routingTableMutex);
+            cout << "Routing Table: " << endl;
+            this->tesla.routingTable.print();
+            this->tesla.routingTable.cleanup();
+            cout << "Routing Table after cleanup: " << endl;
+            this->tesla.routingTable.print();
+        }
+
         {
             std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
             helloRecvTimer = std::chrono::steady_clock::now();

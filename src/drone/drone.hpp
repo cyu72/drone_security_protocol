@@ -29,69 +29,13 @@
 #include <ctime>
 #include "hashTree.hpp"
 #include "messages.hpp"
-#include "mapQueue.hpp"
+#include "routingMap.hpp"
+#include "routingTableEntry.hpp"
 
 using json = nlohmann::json;
 using std::cout;
 using std::endl;
 using std::string;
-
-struct ROUTING_TABLE_ENTRY {
-    /*TODO: Add TESLA MAC QUEUE and ENSUING INFORMATION AND NEW VARIABLE OF HOW OFTEN THIS TABLE GETS CLEANED UP*/
-    string destAddr;
-    string nextHopID; // srcAddr = destAddr if neighbor
-    int seqNum; // Destination SeqNum
-    int cost; // HopCount to reach destination
-    int ttl;
-    string tesla_hash;
-    std::chrono::seconds tesla_disclosure_time;
-    string hash;
-    bool has_mac = false; // tells us if we are waiting for a haskey to decrypt a mac message for this node
-
-    ROUTING_TABLE_ENTRY(){
-        this->destAddr = "ERR";
-        this->nextHopID = "ERR";
-        this->seqNum = -1;
-        this->cost = -1;
-        this->ttl = -1;
-        this->hash = "";
-        this->tesla_hash = "ERR";
-        this->tesla_disclosure_time = std::chrono::seconds(0);
-    }
-
-    // TODO: Must fix all instances of ttl
-    ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, int ttl, string hash){
-        this->destAddr = destAddr;
-        this->nextHopID = nextHopID;
-        this->seqNum = seqNum;
-        this->cost = cost;
-        this->ttl = ttl;
-        this->hash = hash; // What is this field supposed to contain again
-    }
-
-    void print() {
-        cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl << ", hash: " << hash << endl;
-    }
-
-    std::tuple<string, std::chrono::seconds> getTeslaInfo() {
-        if (tesla_hash.compare("ERR") == 0 || tesla_disclosure_time.count() == 0) {
-            throw std::runtime_error("TESLA info not found");
-        }
-        return std::make_tuple(tesla_hash, tesla_disclosure_time);
-    }
-
-    void setTeslaInfo(string hash, std::chrono::seconds ttl) {
-        this->tesla_hash = hash;
-        this->tesla_disclosure_time = ttl;
-    }
-
-    friend std::ostream& operator<<(std::ostream& os, const ROUTING_TABLE_ENTRY& entry) {
-        os << "{ destAddr: " << entry.destAddr << ", nextHopID: " << entry.nextHopID
-           << ", seqNum: " << entry.seqNum << ", cost: " << entry.cost
-           << ", ttl: " << entry.ttl << ", hash: " << entry.hash << " }";
-        return os;
-    }
-};
 
 class drone {
     public: // everything public for now
@@ -134,7 +78,7 @@ class drone {
                 TESLA();
                 ~TESLA();
 
-                MapQueue<string, ROUTING_TABLE_ENTRY> routingTable;
+                RoutingMap<string, ROUTING_TABLE_ENTRY> routingTable;
                 const unsigned int disclosure_time = 10; // every 10 seconds (hard coded value)
 
                 TESLA_MESSAGE init_tesla(const string&);
