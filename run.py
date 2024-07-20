@@ -1,16 +1,20 @@
 import time, sys, random
+import argparse
 import subprocess
 from kubernetes import client, config
 import subprocess
 import threading
 
-# Generate Manifest Start
-droneNum = int(input("Total number of drones in swarm: "))
+parser = argparse.ArgumentParser(description='TBD')
+parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
+parser.add_argument('--startup', type=bool, default=False, help='Complete inital startup process (minikube)')
+args = parser.parse_args()
+
+droneNum = args.drone_count
 droneImage = "cyu72/drone:latest"
 gcsImage = "cyu72/gcs:latest"
 
-isMinikube = input("Is Minikube up? (yes/no): ")
-if isMinikube.lower() == "no":
+if args.startup:
   subprocess.run("minikube start --network-plugin=cni --cni=calico", shell=True, check=True)
   subprocess.run("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", shell=True, check=True)
   subprocess.run("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", shell=True, check=True)
