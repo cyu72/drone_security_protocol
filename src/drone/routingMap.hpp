@@ -23,9 +23,11 @@ public:
 
     // Clean up old entries by removing entries with expired TTLs
     void cleanup() {
+        std::cout << "Cleaning up routing map..." << std::endl;
         auto now = std::chrono::system_clock::now();
         for (auto it = map.begin(); it != map.end(); ) {
-            if (std::chrono::duration_cast<std::chrono::seconds>(now - it->second.ttl) > seconds(5)) {
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - it->second.ttl) > seconds(30)) {
+                std::cout << "Removing entry with key: " << it->first << std::endl;
                 it = map.erase(it); // erase returns the iterator to the next element
             } else {
                 ++it; // increment the iterator
