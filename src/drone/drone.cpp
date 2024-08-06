@@ -107,16 +107,16 @@ void drone::initRouteDiscovery(json& data){
     GCS_MESSAGE ctl;
     ctl.deserialize(data);
 
-    RREQ msg; msg.type = ROUTE_REQUEST; msg.srcAddr = this->addr; msg.intermediateAddr = this->addr; msg.destAddr = ctl.destAddr; msg.srcSeqNum = ++this->seqNum; msg.ttl = this->msgTTL;
+    RREQ msg; msg.type = ROUTE_REQUEST; msg.srcAddr = this->addr; msg.intermediateAddr = this->addr; msg.destAddr = ctl.destAddr; msg.srcSeqNum = ++this->seqNum; msg.ttl = this->max_hop_count;
 
     {   
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
         auto it = this->tesla.routingTable.get(msg.destAddr);
-        msg.destSeqNum = (it) ? it->seqNum : 0; // msg.destSeqNum = (it != this->tesla.routingTable.end()) ? it->second.seqNum : 0;
+        msg.destSeqNum = (it) ? it->seqNum : 0;
     }
     msg.hopCount = 1; // 1 = broadcast range
     // sumn about HERR
-    msg.hash = (msg.srcSeqNum == 1) ? this->hashChainCache[1] : this->hashChainCache[(msg.srcSeqNum - 1) * 8 + 1]; // TODO: Wrap around the cache when needed // NOTE: 8 = hardcoded max hop
+    msg.hash = (msg.srcSeqNum == 1) ? this->hashChainCache[1] : this->hashChainCache[(msg.srcSeqNum - 1) * this->max_hop_count + 1]; // TODO: Wrap around the cache when needed
 
     HashTree tree = HashTree(msg.srcAddr); // init HashTree
     msg.hashTree = tree.toVector();
@@ -333,17 +333,16 @@ void drone::broadcastUDP(const string& msg){
 
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
-    string msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
+    string msg;
+    msg = this->tesla.init_tesla(this->addr).serialize();
+    this->broadcastUDP(msg);
+    msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(10);
+        sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
-            cout << "Routing Table: " << endl;
-            this->tesla.routingTable.print();
             this->tesla.routingTable.cleanup();
-            cout << "Routing Table after cleanup: " << endl;
-            this->tesla.routingTable.print();
         }
 
         {
@@ -351,20 +350,11 @@ void drone::neighborDiscoveryHelper(){
             helloRecvTimer = std::chrono::steady_clock::now();
             this->broadcastUDP(msg);
         }
-        // msg = this->tesla.init_tesla(this->addr).serialize();
-        // this->broadcastUDP(msg);
-        // // Setup a thread that is dedicated to sending out hash disclosures
-        // std::thread hashDisclosureThread([&](){
-        //     while (true) {
-        //         sleep(this->tesla.disclosure_time);
-        //         // build the tesla message
-        //         TESLA_MESSAGE teslaMsg;
-        //         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
-        //         string buf = teslaMsg.serialize();
-        //         this->broadcastUDP(buf);
-        //     }
-        // });
-        // hashDisclosureThread.detach(); // How do I stop a thread later on..?
+
+        TESLA_MESSAGE teslaMsg;
+        teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
+        string buf = teslaMsg.serialize();
+        this->broadcastUDP(buf);
     }
     // Add some check to close this function if drone is closed
 }
@@ -430,9 +420,6 @@ void drone::neighborDiscoveryFunction(){
 
         if (n > 0) {
             buffer[n] = '\0';  // Null-terminate the received data
-
-            // TODO: Need to process here instead of just printing
-            // Print received message and sender's address
             char client_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
             int client_port = ntohs(client_addr.sin_port);
@@ -493,19 +480,19 @@ int main(int argc, char* argv[]) {
 
     /*Temp code to make all drones start at the same time
     Waits until the nearest 30 seconds to start code*/
-    auto now = std::chrono::system_clock::now();
-    auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    int currSecond = now_sec.time_since_epoch().count() % 60;
-    int secsToWait = 0;
+    // auto now = std::chrono::system_clock::now();
+    // auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    // int currSecond = now_sec.time_since_epoch().count() % 60;
+    // int secsToWait = 0;
 
-    if (currSecond > 30) {
-        secsToWait = 60 - currSecond + 30;
-    } else {
-        secsToWait = 30 - currSecond;
-    }
+    // if (currSecond > 30) {
+    //     secsToWait = 60 - currSecond + 30;
+    // } else {
+    //     secsToWait = 30 - currSecond;
+    // }
 
-    cout << "Waiting for " << secsToWait << " seconds." << endl;
-    sleep(secsToWait);
+    // cout << "Waiting for " << secsToWait << " seconds." << endl;
+    // sleep(secsToWait);
 
     std::thread udpThread([&node](){
         node.neighborDiscoveryFunction();

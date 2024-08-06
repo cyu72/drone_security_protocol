@@ -31,6 +31,7 @@
 #include "messages.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
+#include "multi_index_container.hpp"
 
 using json = nlohmann::json;
 using std::cout;
@@ -55,7 +56,6 @@ class drone {
         }
         string addr;
         int port;
-        int msgTTL = 3; // Hardcoded value for message ttl
         unsigned long seqNum;
         int nodeID;
         std::deque<string> hashChainCache; 
@@ -79,7 +79,7 @@ class drone {
                 ~TESLA();
 
                 RoutingMap<string, ROUTING_TABLE_ENTRY> routingTable;
-                const unsigned int disclosure_time = 10; // every 10 seconds (hard coded value)
+                const unsigned int disclosure_time = std::stoul((std::getenv("TESLA_DISCLOSE")));
 
                 TESLA_MESSAGE init_tesla(const string&);
                 // need function to disclose hashes ever t
@@ -89,7 +89,8 @@ class drone {
                 std::set<msg> mac_q;
             private:
                 string addr;
-                const unsigned int key_lifetime = 10800; // 10800 seconds
+                const unsigned int key_lifetime = 10800; // Hardcoded: 10800 seconds
+                PacketStore packetStore;
                 const unsigned int numKeys = key_lifetime / disclosure_time;
                 // unsigned char (*hashChain)[SHA256_DIGEST_LENGTH];
                 std::deque<std::string> hash_chain;
@@ -117,13 +118,12 @@ class drone {
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
     private:
-        const uint8_t max_hop_count = 8; // hardcoded for a max hop count to be 8; meaning 8 drones can be in a chain at one time
+        const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT")));; // Maximum number of nodes we can/allow route through
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
         std::mutex helloRecvTimerMutex, routingTableMutex;
-
-        std::queue<std::string> tcpMsgQueue;
+ 
 };
 
 #endif

@@ -29,7 +29,6 @@ enum MESSAGE_TYPE {
     DATA,
     INIT_ROUTE_DISCOVERY, // GCS -> Drone to initiate route discovery
     VERIFY_ROUTE, // GCS -> Drone to verify route
-    TEST,
     INIT_MSG, // used to init drone swarm
     EXIT
 };
@@ -217,33 +216,5 @@ struct INIT_MESSAGE : public MESSAGE {
     }
     
 };
-
-struct ROUTING_TABLE_ENTRY {
-    string destID;
-    int nextHopID;
-    int seqNum;
-    int cost;
-    int ttl;
-    string hash;
-
-    ROUTING_TABLE_ENTRY(){
-        this->destID = "";
-        this->nextHopID = -1;
-        this->seqNum = -1;
-        this->cost = -1;
-        this->ttl = -1;
-        this->hash = "";
-    }
-
-    ROUTING_TABLE_ENTRY(string destID, int nextHopID, int seqNum, int cost, int ttl, string hash){
-        this->destID = destID;
-        this->nextHopID = nextHopID;
-        this->seqNum = seqNum;
-        this->cost = cost;
-        this->ttl = ttl;
-        this->hash = hash;
-    }
-};
-
 
 #endif

@@ -86,7 +86,7 @@ struct RREQ : public MESSAGE {
     std::vector<string> hashTree; // can optimize later to use memory more efficiently
     unsigned long hopCount;
     int HERR; // temp placeholder for what HERR should be
-    int ttl;
+    int ttl; // Max number of hops allowed for RREQ to propagate through network
 
     RREQ() {
         this->type = ROUTE_REQUEST;
