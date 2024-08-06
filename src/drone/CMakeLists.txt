@@ -19,17 +19,21 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenSSL REQUIRED)
 
+find_package(Boost REQUIRED)
+include_directories(${Boost_INCLUDE_DIRS})
+
 enable_testing()
 add_executable(
     drone
     drone.cpp
     tesla.cpp
     hashTree.cpp
-    mapQueue.hpp
+    routingMap.hpp
 )
 target_link_libraries(
     drone
     nlohmann_json::nlohmann_json
     ssl
     crypto
+    ${Boost_LIBRARIES}
 )

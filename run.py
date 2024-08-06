@@ -7,7 +7,9 @@ import threading
 
 parser = argparse.ArgumentParser(description='TBD')
 parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
-parser.add_argument('--startup', type=bool, default=False, help='Complete inital startup process (minikube)')
+parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
+parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
+parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
 args = parser.parse_args()
 
 droneNum = args.drone_count
@@ -15,7 +17,7 @@ droneImage = "cyu72/drone:latest"
 gcsImage = "cyu72/gcs:latest"
 
 if args.startup:
-  subprocess.run("minikube start --network-plugin=cni --cni=calico", shell=True, check=True)
+  subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
   subprocess.run("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", shell=True, check=True)
   subprocess.run("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", shell=True, check=True)
   subprocess.run("minikube addons enable metallb", shell=True, check=True)
@@ -45,6 +47,10 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "{num}"
+        - name: TESLA_DISCLOSE
+          value: "{args.tesla_disclosure_time}"
+        - name: MAX_HOP_COUNT
+          value: "{args.max_hop_count}"
       ports:
         - name: action-port
           protocol: TCP
