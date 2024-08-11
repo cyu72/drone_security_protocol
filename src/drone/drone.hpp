@@ -32,6 +32,7 @@
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "multi_index_container.hpp"
+#include "network_adapters/kube_interface.hpp"
 
 using json = nlohmann::json;
 using std::cout;
@@ -40,20 +41,9 @@ using std::string;
 
 class drone {
     public: // everything public for now
-        drone(){
-            this->addr = -1;
-            this->port = -999;
-            this->nodeID = -1;
-            this->seqNum = 0;
-        }
+        drone();
+        drone(int port, int nodeID);
 
-        drone(int port, int nodeID){
-            cout << "Drone constructor called" << endl;
-            this->addr = "drone" + std::to_string(nodeID) + "-service.default";
-            this->port = port;
-            this->nodeID = nodeID;
-            this->seqNum = 0;
-        }
         string addr;
         int port;
         unsigned long seqNum;
@@ -104,9 +94,9 @@ class drone {
 
         TESLA tesla;
 
-        void broadcastUDP(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
+        void broadcast(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
         void sendData(string containerName, const string& msg);
-        int sendDataUDP(const string&, const string&);
+        void sendDataUDP(const string&, const string&);
         string sha256(const string& inn);
         void initMessageHandler(json& data);
         void routeRequestHandler(json& data);
@@ -119,6 +109,7 @@ class drone {
         void neighborDiscoveryHelper();
     private:
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT")));; // Maximum number of nodes we can/allow route through
+        UDPSocket udpSocket;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message

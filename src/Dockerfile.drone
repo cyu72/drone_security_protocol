@@ -22,6 +22,7 @@ ENV PATH="/app/venv/bin:$PATH"
 RUN pip3 install flask
 
 COPY drone/*.cpp drone/*.hpp drone/CMakeLists.txt drone/initScript.py /app/
+COPY drone/network_adapters/* /app/network_adapters/
 
 RUN cmake .
 RUN make

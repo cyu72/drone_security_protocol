@@ -3,6 +3,22 @@
 std::chrono::high_resolution_clock::time_point globalStartTime;
 std::chrono::high_resolution_clock::time_point globalEndTime;
 
+drone::drone() : udpSocket(BRDCST_PORT) {
+    cout << "Default drone constructor called" << endl;
+    this->addr = "";
+    this->port = -1;
+    this->nodeID = -1;
+    this->seqNum = 0;
+}
+
+drone::drone(int port, int nodeID) : udpSocket(BRDCST_PORT) {
+    cout << "Drone constructor called" << endl;
+    this->addr = "drone" + std::to_string(nodeID) + "-service.default";
+    this->port = port;
+    this->nodeID = nodeID;
+    this->seqNum = 0;
+}
+
 void drone::clientResponseThread(const string& buffer){
     /* function to handle all incoming messages from the client
     check what type of message it is; launch the function to handle whatever type it is */
@@ -124,7 +140,7 @@ void drone::initRouteDiscovery(json& data){
 
     globalStartTime = std::chrono::high_resolution_clock::now();
     string buf = msg.serialize();
-    this->broadcastUDP(buf);
+    udpSocket.broadcast(buf);
 }
 
 void drone::initMessageHandler(json& data){
@@ -228,7 +244,7 @@ void drone::routeRequestHandler(json& data){
         msg.intermediateAddr = this->addr;
         string buf = msg.serialize();
         cout << "forwarding RREQ : " << buf << endl;
-        this->broadcastUDP(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
+        udpSocket.broadcast(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
     }
     // update cached seqNum
     cout << "Finished handling RREQ." << endl;
@@ -293,41 +309,11 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
-int drone::sendDataUDP(const string& containerName, const string& msg) {
-    struct addrinfo hints, *result;
-    std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-
-    int status = getaddrinfo(containerName.c_str(), std::to_string(BRDCST_PORT).c_str(), &hints, &result);
-    if (status != 0) {
-        std::cerr << "Error resolving host: " << gai_strerror(status) << endl;
-        return 0;
-    }
-
-    int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (sockfd == -1) {
-        std::cerr << "Error creating socket" << endl;
-        freeaddrinfo(result);
-        return 0;
-    }
-
-    ssize_t bytesSent = sendto(sockfd, msg.c_str(), msg.size(), 0, result->ai_addr, result->ai_addrlen);
-    if (bytesSent == -1) {
-        std::cerr << "Error: " << strerror(errno) << endl;
-        return 0;
-    }
-
-    freeaddrinfo(result);
-    close(sockfd);
-    return 1;
-}
-
-void drone::broadcastUDP(const string& msg){
-    int swarmSize = 15; // temp
-    for (int i = 1; i <= swarmSize; ++i){
-        string containerName = "drone" + std::to_string(i) + "-service.default";
-        sendDataUDP(containerName, msg);
+void drone::sendDataUDP(const string& containerName, const string& msg) {
+    try {
+        udpSocket.sendTo(containerName, msg, BRDCST_PORT);
+    } catch (const std::exception& e) {
+        std::cerr << "Error sending UDP data: " << e.what() << std::endl;
     }
 }
 
@@ -335,7 +321,7 @@ void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
     msg = this->tesla.init_tesla(this->addr).serialize();
-    this->broadcastUDP(msg);
+    udpSocket.broadcast(msg);
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
@@ -348,13 +334,13 @@ void drone::neighborDiscoveryHelper(){
         {
             std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
             helloRecvTimer = std::chrono::steady_clock::now();
-            this->broadcastUDP(msg);
+            udpSocket.broadcast(msg);
         }
 
         TESLA_MESSAGE teslaMsg;
         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
         string buf = teslaMsg.serialize();
-        this->broadcastUDP(buf);
+        udpSocket.broadcast(buf);
     }
     // Add some check to close this function if drone is closed
 }
@@ -381,51 +367,26 @@ void drone::neighborDiscoveryFunction(){
         // cout << "Hash: " << hash << endl;
     }
 
-    // UDP setup start
-    int udp_sock;
-    struct sockaddr_in server_addr, client_addr;
-    char buffer[1024];
-    socklen_t addr_len = sizeof(client_addr);
-
-    if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("UDP socket creation failed");
-        exit(EXIT_FAILURE);
-    }
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(BRDCST_PORT);
-
-    if (bind(udp_sock, (const struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("UDP bind failed");
-        close(udp_sock);
-        exit(EXIT_FAILURE);
-    }
-
-    // Remove timeout and select setup
-
     auto resetTableTimer = std::chrono::steady_clock::now();
     std::thread neighborDiscoveryThread([&](){
         this->neighborDiscoveryHelper();
     });
     
     while (true) {
-        // Place in routing table scanning + removal function here
-        int n = recvfrom(udp_sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&client_addr, &addr_len);
-        if (n < 0) {
-            perror("recvfrom failed");
-            break;
-        }
+        try {
+            struct sockaddr_in client_addr;
+            string receivedMsg = udpSocket.receiveFrom(client_addr);
 
-        if (n > 0) {
-            buffer[n] = '\0';  // Null-terminate the received data
             char client_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
             int client_port = ntohs(client_addr.sin_port);
-            // std::cout << "Received UDP message: " << buffer << std::endl;
+
+            // std::cout << "Received UDP message: " << receivedMsg << std::endl;
             // std::cout << "From: " << client_ip << ":" << client_port << std::endl;
-            this->clientResponseThread(buffer); 
+            this->clientResponseThread(receivedMsg);
+        } catch (const std::exception& e) {
+            std::cerr << "Error in neighborDiscoveryFunction: " << e.what() << std::endl;
+            break;
         }
     }
 
@@ -436,8 +397,6 @@ void drone::neighborDiscoveryFunction(){
         - We may also want to reset the list every number of intervals, requiring us to lock the list to prevent sending data to stale neighbors
         - Issue of generating new hash chain; how does the host node decide when they should create a new hash chain and send it out? In this scenario, should we just always modify our routing entries to accept the latest message? That could end up being a lot of processing
         */
-
-    close(udp_sock);
     // Add some check to close this function if drone is closed
 }
 
