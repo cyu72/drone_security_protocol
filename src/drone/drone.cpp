@@ -3,7 +3,7 @@
 std::chrono::high_resolution_clock::time_point globalStartTime;
 std::chrono::high_resolution_clock::time_point globalEndTime;
 
-drone::drone() : udpSocket(BRDCST_PORT) {
+drone::drone() : udpInterface(BRDCST_PORT), tcpInterface(PORT_NUMBER) {
     cout << "Default drone constructor called" << endl;
     this->addr = "";
     this->port = -1;
@@ -11,7 +11,7 @@ drone::drone() : udpSocket(BRDCST_PORT) {
     this->seqNum = 0;
 }
 
-drone::drone(int port, int nodeID) : udpSocket(BRDCST_PORT) {
+drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     cout << "Drone constructor called" << endl;
     this->addr = "drone" + std::to_string(nodeID) + "-service.default";
     this->port = port;
@@ -73,46 +73,15 @@ void drone::verifyRouteHandler(json& data){
 }
 
 void drone::sendData(string containerName, const string& msg) {
-    struct addrinfo hints, *result;
-    std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-
-    int status = getaddrinfo(containerName.c_str(), std::to_string(PORT_NUMBER).c_str(), &hints, &result);
-    if (status != 0) {
-        std::cerr << "Error resolving host " << containerName << ": " << gai_strerror(status) << std::endl;
-        return;
+    try {
+        TCPInterface clientSocket(0, false); // 0 for port, false for is_server
+        clientSocket.connect_to(containerName, PORT_NUMBER);
+        clientSocket.send_data(msg);
+        // Note: We're not waiting for a response here. If you need to receive data, add:
+        // string response = clientSocket.receive_data();
+    } catch (const std::exception& e) {
+        std::cerr << "Error sending data to " << containerName << ": " << e.what() << std::endl;
     }
-
-    int sockfd = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-    if (sockfd == -1) {
-        std::cerr << "Error creating socket for " << containerName << std::endl;
-        freeaddrinfo(result);
-        return;
-    }
-
-    struct timeval timeout;
-    timeout.tv_sec = 1; // TEMP: Set timeout to 1 seconds
-    timeout.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
-
-    if (connect(sockfd, result->ai_addr, result->ai_addrlen) == -1) {
-        std::cerr << "Error connecting to " << containerName << ": " << strerror(errno) << std::endl;
-        close(sockfd);
-        freeaddrinfo(result);
-        return;
-    }
-
-    ssize_t bytesSent = send(sockfd, msg.c_str(), msg.size(), 0);
-    if (bytesSent == -1) {
-        std::cerr << "Error sending message to " << containerName << ": " << strerror(errno) << std::endl;
-    } else {
-        std::cout << "Sent " << bytesSent << " bytes to " << containerName << std::endl;
-    }
-
-    freeaddrinfo(result);
-    close(sockfd);
 }
 
 void drone::initRouteDiscovery(json& data){
@@ -140,7 +109,7 @@ void drone::initRouteDiscovery(json& data){
 
     globalStartTime = std::chrono::high_resolution_clock::now();
     string buf = msg.serialize();
-    udpSocket.broadcast(buf);
+    udpInterface.broadcast(buf);
 }
 
 void drone::initMessageHandler(json& data){
@@ -244,7 +213,7 @@ void drone::routeRequestHandler(json& data){
         msg.intermediateAddr = this->addr;
         string buf = msg.serialize();
         cout << "forwarding RREQ : " << buf << endl;
-        udpSocket.broadcast(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
+        udpInterface.broadcast(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
     }
     // update cached seqNum
     cout << "Finished handling RREQ." << endl;
@@ -311,7 +280,7 @@ string drone::sha256(const string& inn){
 
 void drone::sendDataUDP(const string& containerName, const string& msg) {
     try {
-        udpSocket.sendTo(containerName, msg, BRDCST_PORT);
+        udpInterface.sendTo(containerName, msg, BRDCST_PORT);
     } catch (const std::exception& e) {
         std::cerr << "Error sending UDP data: " << e.what() << std::endl;
     }
@@ -321,7 +290,7 @@ void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
     msg = this->tesla.init_tesla(this->addr).serialize();
-    udpSocket.broadcast(msg);
+    udpInterface.broadcast(msg);
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
@@ -334,13 +303,13 @@ void drone::neighborDiscoveryHelper(){
         {
             std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
             helloRecvTimer = std::chrono::steady_clock::now();
-            udpSocket.broadcast(msg);
+            udpInterface.broadcast(msg);
         }
 
         TESLA_MESSAGE teslaMsg;
         teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
         string buf = teslaMsg.serialize();
-        udpSocket.broadcast(buf);
+        udpInterface.broadcast(buf);
     }
     // Add some check to close this function if drone is closed
 }
@@ -375,7 +344,7 @@ void drone::neighborDiscoveryFunction(){
     while (true) {
         try {
             struct sockaddr_in client_addr;
-            string receivedMsg = udpSocket.receiveFrom(client_addr);
+            string receivedMsg = udpInterface.receiveFrom(client_addr);
 
             char client_ip[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
@@ -400,6 +369,37 @@ void drone::neighborDiscoveryFunction(){
     // Add some check to close this function if drone is closed
 }
 
+void drone::start() {
+    std::thread udpThread([this](){
+        this->neighborDiscoveryFunction();
+    });
+
+    cout << "Entering server loop " << endl;
+    while (true) {
+        try {
+            int clientSock = this->tcpInterface.accept_connection();
+            
+            std::thread([this, clientSock](){
+                try {
+                    string msg = this->tcpInterface.receive_data(clientSock);
+                    
+                    cout << "Message received at: ";
+                    auto now = std::chrono::system_clock::now();
+                    std::time_t timestamp = std::chrono::system_clock::to_time_t(now);
+                    cout << std::ctime(&timestamp);
+                    cout << msg << endl;
+
+                    this->clientResponseThread(msg);
+                } catch (const std::exception& e) {
+                    std::cerr << "Error handling client: " << e.what() << std::endl;
+                }
+                close(clientSock);
+            }).detach();
+        } catch (const std::exception& e) {
+            std::cerr << "Error accepting connection: " << e.what() << std::endl;
+        }
+    }
+}
 
 int main(int argc, char* argv[]) {
     cout << "Starting drone." << endl;
@@ -409,33 +409,7 @@ int main(int argc, char* argv[]) {
     drone node(std::stoi(param2), std::stoi(param3)); // env vars for init
     cout << "Drone object created." << endl;
 
-    int listenSock;
-    struct sockaddr_in server_addr;
-    char buffer[5000];
-    string msg;
-
-    //// Setup Begin
-    listenSock = socket(AF_INET, SOCK_STREAM, 0);
-    if (listenSock < 0) {
-        std::cerr << "Error in socket creation." << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(node.port);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-
-    if (bind(listenSock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        std::cerr << "Error in binding." << endl;
-        exit(EXIT_FAILURE);
-    }
-
-    if (listen(listenSock, 5) < 0) {
-        std::cerr << "Error in listening." << endl;
-        exit(EXIT_FAILURE);
-    }
-    //// Setup End
+    node.start();
 
     /*Temp code to make all drones start at the same time
     Waits until the nearest 30 seconds to start code*/
@@ -452,53 +426,6 @@ int main(int argc, char* argv[]) {
 
     // cout << "Waiting for " << secsToWait << " seconds." << endl;
     // sleep(secsToWait);
-
-    std::thread udpThread([&node](){
-        node.neighborDiscoveryFunction();
-    });
-
-    cout << "Entering server loop " << endl;
-    while (true) {
-        struct sockaddr_in client_addr;
-        socklen_t client_len = sizeof(client_addr);
-        int newSock = accept(listenSock, (struct sockaddr*)&client_addr, &client_len);
-        if (newSock < 0) {
-            std::cerr << "Error accepting connection" << endl;
-            continue;
-        }
-
-        ssize_t bytesRead = recv(newSock, buffer, sizeof(buffer) - 1, 0);
-        if (bytesRead == -1) {
-            std::cerr << "Error receiving data" << endl;
-            close(newSock);
-            continue;
-        }
-
-        buffer[bytesRead] = '\0';
-        msg = std::string(buffer); // TODO: Remove to reduce string usage
-
-        cout << "Message received at: ";
-        auto now = std::chrono::system_clock::now();
-        std::time_t timestamp = std::chrono::system_clock::to_time_t(now);
-        cout << std::ctime(&timestamp);
-        cout << msg << endl;
-
-        // Temp: Used to check IP addresses of recieved message
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
-        int client_port = ntohs(client_addr.sin_port);
-
-        std::cout << "Connection accepted from " << client_ip << ":" << client_port << std::endl;
-
-        // Create a new thread using a lambda function that calls the member function.
-        std::thread([&node, newSock, &msg](){
-            close(newSock);
-            node.clientResponseThread(msg);
-        }).detach();     
-
-    }
-
-    close(listenSock);
 
     return 0;
 }

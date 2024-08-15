@@ -1,5 +1,5 @@
-#ifndef UDP_SOCKET_HPP
-#define UDP_SOCKET_HPP
+#ifndef KUBE_UDP_INTERFACE_HPP
+#define KUBE_UDP_INTERFACE_HPP
 
 #include <string>
 #include <cstring>
@@ -9,9 +9,9 @@
 #include <netdb.h>
 #include <stdexcept>
 
-class UDPSocket {
+class UDPInterface {
 public:
-    UDPSocket(int port) {
+    UDPInterface(int port) {
         if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
             throw std::runtime_error("UDP socket creation failed");
         }
@@ -27,7 +27,7 @@ public:
         }
     }
 
-    ~UDPSocket() {
+    ~UDPInterface() {
         close(sock);
     }
 
@@ -77,4 +77,4 @@ private:
     struct sockaddr_in server_addr;
 };
 
-#endif // UDP_SOCKET_HPP
+#endif

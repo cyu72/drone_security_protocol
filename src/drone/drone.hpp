@@ -32,7 +32,8 @@
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "multi_index_container.hpp"
-#include "network_adapters/kube_interface.hpp"
+#include "network_adapters/kube_udp_interface.hpp"
+#include "network_adapters/tcp_interface.hpp"
 
 using json = nlohmann::json;
 using std::cout;
@@ -107,9 +108,11 @@ class drone {
         void verifyRouteHandler(json& data);
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
+        void start();
     private:
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT")));; // Maximum number of nodes we can/allow route through
-        UDPSocket udpSocket;
+        UDPInterface udpInterface;
+        TCPInterface tcpInterface;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
