@@ -19,9 +19,6 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenSSL REQUIRED)
 
-find_package(Boost REQUIRED)
-include_directories(${Boost_INCLUDE_DIRS})
-
 enable_testing()
 add_executable(
     drone
@@ -35,5 +32,4 @@ target_link_libraries(
     nlohmann_json::nlohmann_json
     ssl
     crypto
-    ${Boost_LIBRARIES}
 )

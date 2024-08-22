@@ -65,11 +65,6 @@ void drone::clientResponseThread(const string& buffer){
 
 void drone::verifyRouteHandler(json& data){
     this->tesla.routingTable.print();
-
-    cout << "\n";
-    for (const auto& element : this->tesla.mac_q) {
-        std::cout << element.data << " " << element.MAC << " " << element.tstamp.time_since_epoch().count() << std::endl;
-    }
 }
 
 void drone::sendData(string containerName, const string& msg) {
@@ -77,8 +72,7 @@ void drone::sendData(string containerName, const string& msg) {
         TCPInterface clientSocket(0, false); // 0 for port, false for is_server
         clientSocket.connect_to(containerName, PORT_NUMBER);
         clientSocket.send_data(msg);
-        // Note: We're not waiting for a response here. If you need to receive data, add:
-        // string response = clientSocket.receive_data();
+
     } catch (const std::exception& e) {
         std::cerr << "Error sending data to " << containerName << ": " << e.what() << std::endl;
     }
@@ -123,7 +117,8 @@ void drone::initMessageHandler(json& data){
     // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
     ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 0, 1, std::chrono::system_clock::now(), msg.hash); // TODO: Incorporate ttl mechanics
     std::lock_guard<std::mutex> lock(this->routingTableMutex);
-    this->tesla.routingTable[msg.srcAddr] = entry;
+    this->tesla.routingTable.insert(msg.srcAddr, entry);
+    // this->tesla.routingTable[msg.srcAddr] = entry;
 }
 
 void drone::routeRequestHandler(json& data){ 
@@ -174,7 +169,8 @@ void drone::routeRequestHandler(json& data){
             rrep.destSeqNum = this->tesla.routingTable.get(msg.destAddr)->seqNum;
         } else {
             rrep.destSeqNum = this->seqNum;
-            this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, 0, std::chrono::system_clock::now(), msg.hash); // TODO: Check what is the hash field supposed to contain again?
+            this->tesla.routingTable.insert(msg.srcAddr, ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, 0, std::chrono::system_clock::now(), msg.hash));
+            // this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, this->seqNum, 0, std::chrono::system_clock::now(), msg.hash); // TODO: Check what is the hash field supposed to contain again?
         }
 
         rrep.hopCount = 1;
@@ -188,7 +184,9 @@ void drone::routeRequestHandler(json& data){
             cout << "Sending RREP to next hop: " << this->tesla.routingTable.get(msg.srcAddr)->nextHopID << endl;
             sendData(this->tesla.routingTable.get(msg.srcAddr)->nextHopID, buf); // send to next hop stored
         }
+        
         // TODO: Check ttl 
+        // TODO: Attach HERR
     }
     else {     // else increment hop count and forward rreq
         msg.hopCount++;
@@ -200,7 +198,8 @@ void drone::routeRequestHandler(json& data){
             msg.destSeqNum = this->seqNum;
         }
         cout << "Adding to routing table. "; this->tesla.routingTable[msg.srcAddr].print();
-        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash); // TODO: DONT UPDATE THE HASH HERE LEAVE IT
+        this->tesla.routingTable.insert(msg.srcAddr, ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash));
+        // this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash); // TODO: DONT UPDATE THE HASH HERE LEAVE IT
         cout << "Added to routing table."; this->tesla.routingTable[msg.srcAddr].print();
 
         msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
@@ -243,7 +242,8 @@ void drone::routeReplyHandler(json& data){
     }
 
     if (msg.destAddr == this->addr){ 
-        this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash);
+        this->tesla.routingTable.insert(msg.srcAddr, ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash));
+        // this->tesla.routingTable[msg.srcAddr] = ROUTING_TABLE_ENTRY(msg.srcAddr, msg.intermediateAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash);
         cout << "Successfully completed route" << endl;
         globalEndTime = std::chrono::high_resolution_clock::now();
         cout << "Elapsed Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(globalEndTime - globalStartTime).count() << " ms" << endl;
@@ -255,6 +255,7 @@ void drone::routeReplyHandler(json& data){
         msg.intermediateAddr = this->addr; // update intermediate addr so final node can add to cache
         string buf = msg.serialize();
         sendData(this->tesla.routingTable.get(msg.destAddr)->nextHopID, buf);
+        // TODO: Attach HERR
     }
 }
 
@@ -263,6 +264,24 @@ void drone::routeErrorHandler(MESSAGE& msg){
     // generate RERRs under the following conditions:
     // A node detects link breakage of active route
     // Node cannot detects link breakage with neighbor
+}
+
+string drone::generate_nonce(const size_t length = 16) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dis(0, 255);
+
+    std::vector<unsigned char> random_bytes(length);
+    for (size_t i = 0; i < length; ++i) {
+        random_bytes[i] = static_cast<unsigned char>(dis(gen));
+    }
+
+    std::stringstream ss;
+    for (const auto &byte : random_bytes) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+
+    return ss.str();
 }
 
 string drone::sha256(const string& inn){
@@ -305,13 +324,7 @@ void drone::neighborDiscoveryHelper(){
             helloRecvTimer = std::chrono::steady_clock::now();
             udpInterface.broadcast(msg);
         }
-
-        TESLA_MESSAGE teslaMsg;
-        teslaMsg.set_disclose(this->addr, this->tesla.hash_disclosure());
-        string buf = teslaMsg.serialize();
-        udpInterface.broadcast(buf);
     }
-    // Add some check to close this function if drone is closed
 }
 
 void drone::neighborDiscoveryFunction(){
@@ -426,6 +439,7 @@ int main(int argc, char* argv[]) {
 
     // cout << "Waiting for " << secsToWait << " seconds." << endl;
     // sleep(secsToWait);
+    // Reminder to set up phase 1 and phase 2 to only allow tesla init messages in phase 1
 
     return 0;
 }
