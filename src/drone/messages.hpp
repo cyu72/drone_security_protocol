@@ -18,6 +18,7 @@
 #include <openssl/sha.h>
 #include <openssl/rand.h>
 #include <chrono>
+#include <vector>
 
 using json = nlohmann::json;
 using std::cout;
@@ -75,6 +76,125 @@ struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
     }
 };
 
+struct RERR : public MESSAGE {
+    std::vector<string> nonce_list;
+    std::vector<string> tsla_list;
+    std::vector<string> dst_list;
+    std::vector<string> auth_list;
+
+    RERR() {}
+
+    RERR(std::vector<string> nonce_list, std::vector<string> tsla_list, std::vector<string> dst_list, std::vector<string> auth_list) {
+        this->nonce_list = nonce_list;
+        this->tsla_list = tsla_list;
+        this->dst_list = dst_list;
+        this->auth_list = auth_list;
+    }
+
+    void create_rerr(const std::vector<string>& nonce_list, 
+                            const std::vector<string>& tsla_list, 
+                            const std::vector<string>& dst_list, 
+                            const std::vector<string>& auth_list) {
+        this->nonce_list = nonce_list;
+        this->tsla_list = tsla_list;
+        this->dst_list = dst_list;
+        this->auth_list = auth_list;
+    }
+
+    void create_rerr_prime(const string& nonce, const string& dst, const string& auth) {
+        this->nonce_list = {nonce};
+        this->tsla_list = {};  // Empty for RERR'
+        this->dst_list = {dst};
+        this->auth_list = {auth};
+    }
+
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"nonce_list", this->nonce_list},
+            {"tsla_list", this->tsla_list},
+            {"dst_list", this->dst_list},
+            {"auth_list", this->auth_list}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->nonce_list = j["nonce_list"].get<std::vector<string>>();
+        this->tsla_list = j["tsla_list"].get<std::vector<string>>();
+        this->dst_list = j["dst_list"].get<std::vector<string>>();
+        this->auth_list = j["auth_list"].get<std::vector<string>>();
+    }
+};
+
+struct HERR {
+    string hRERR;
+    string mac_t;
+
+    HERR() {}
+
+    HERR(string hash, string mac){
+        this->hRERR = hash;
+        this->mac_t = mac;
+    }
+
+    static HERR create(const RERR& future_rerr, const string& tesla_key) {
+        string hash = compute_hash(future_rerr);
+        string mac = compute_mac(hash, tesla_key);
+        return HERR(hash, mac);
+    }
+
+    bool verify(const RERR& rerr, const string& tesla_key) const {
+        string computed_hash = compute_hash(rerr);
+        string computed_mac = compute_mac(computed_hash, tesla_key);
+        return (computed_hash == hRERR) && (computed_mac == mac_t);
+    }
+    
+    json to_json() const {
+        return json{
+            {"hRERR", hRERR},
+            {"mac_t", mac_t}
+        };
+    }
+
+    static HERR from_json(const json& j) {
+        return HERR(j["hRERR"], j["mac_t"]);
+    }
+
+    private:
+    static string compute_hash(const RERR& rerr) {
+        string serialized_rerr = rerr.serialize();
+        unsigned char hash[SHA256_DIGEST_LENGTH];
+        SHA256_CTX sha256;
+        SHA256_Init(&sha256);
+        SHA256_Update(&sha256, serialized_rerr.c_str(), serialized_rerr.size());
+        SHA256_Final(hash, &sha256);
+        std::stringstream ss;
+        for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
+        }
+        return ss.str();
+    }
+
+    static string compute_mac(const std::string& data, const std::string& key) {
+        unsigned char digest[EVP_MAX_MD_SIZE];
+        unsigned int digest_len;
+
+        HMAC(EVP_sha256(), 
+            key.c_str(), key.length(),
+            reinterpret_cast<const unsigned char*>(data.c_str()), data.length(),
+            digest, &digest_len);
+
+        std::stringstream ss;
+        for(unsigned int i = 0; i < digest_len; i++) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << (int)digest[i];
+        }
+        return ss.str();
+    }
+
+};
+
 struct RREQ : public MESSAGE {
     string srcAddr;
     string intermediateAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
@@ -85,7 +205,7 @@ struct RREQ : public MESSAGE {
     string rootHash;
     std::vector<string> hashTree; // can optimize later to use memory more efficiently
     unsigned long hopCount;
-    int HERR; // temp placeholder for what HERR should be
+    HERR herr;
     int ttl; // Max number of hops allowed for RREQ to propagate through network
 
     RREQ() {
@@ -94,13 +214,12 @@ struct RREQ : public MESSAGE {
         this->destSeqNum = 0;
         this->hash = "";
         this->hopCount = 0;
-        this->HERR = 0;
         this->rootHash = "";
-        this->hashTree = {};
         this->ttl = 0;
     }
 
-    RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, std::vector<string> hashTree, int ttl, string rootHash) {
+    RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, 
+         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash) {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr;
         this->intermediateAddr = interAddr;
@@ -109,10 +228,10 @@ struct RREQ : public MESSAGE {
         this->destSeqNum = destSeqNum;
         this->hash = hash;
         this->hopCount = hopCount;
-        this->HERR = HERR;
+        this->herr = herr;
         this->hashTree = hashTree;
         this->ttl = ttl;
-        this->rootHash = rootHash; // Can delete this field later; meant for testing; must replace with hashTree[0] in code tho
+        this->rootHash = rootHash;
     }
 
     string serialize() const override {
@@ -125,12 +244,12 @@ struct RREQ : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"HERR", this->HERR},
             {"hashTree", this->hashTree},
             {"ttl", this->ttl},
-            {"rootHash", this->rootHash}
-
+            {"rootHash", this->rootHash},
+            {"herr", this->herr.to_json()}
         };
+
         return j.dump();
     }
 
@@ -143,10 +262,10 @@ struct RREQ : public MESSAGE {
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->HERR = j["HERR"];
         this->hashTree = j["hashTree"].get<std::vector<string>>();
         this->ttl = j["ttl"];
         this->rootHash = j["rootHash"];
+        this->herr = HERR::from_json(j["herr"]);
     }
 };
 
@@ -158,7 +277,7 @@ struct RREP : public MESSAGE {
     unsigned long destSeqNum;
     string hash;
     unsigned long hopCount;
-    int HERR; // temp placeholder for what HERR should be
+    HERR herr;
     int ttl;
 
     RREP() {
@@ -167,11 +286,10 @@ struct RREP : public MESSAGE {
         this->destSeqNum = 0;
         this->hash = "";
         this->hopCount = 0;
-        this->HERR = 0;
         this->ttl = 0;
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, int HERR, int ttl) {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, HERR herr, int ttl) {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -179,7 +297,7 @@ struct RREP : public MESSAGE {
         this->destSeqNum = destSeqNum;
         this->hash = hash;
         this->hopCount = hopCount;
-        this->HERR = HERR;
+        this->herr = herr;
         this->ttl = ttl;
     }
 
@@ -193,7 +311,7 @@ struct RREP : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"HERR", this->HERR},
+            {"herr", this->herr.to_json()},
             {"ttl", this->ttl}
         };
         return j.dump();
@@ -208,15 +326,21 @@ struct RREP : public MESSAGE {
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->HERR = j["HERR"];
+        this->herr = HERR::from_json(j["herr"]);
         this->ttl = j["ttl"];
     }
 
 };
 
 struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the future with TESLA_MESSAGE
+    enum INIT_MODE {
+        AUTH,
+        TESLA
+    };
+    INIT_MODE mode;
     string hash;
     string srcAddr;
+    int disclosure_time;
 
     INIT_MESSAGE() {
         this->type = HELLO;
@@ -228,6 +352,13 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         this->type = HELLO;
         this->hash = hash;
         this->srcAddr = addr;
+    }
+
+    void set_tesla_init(string srcAddr, string hash, int disclosure_time) {
+        this->srcAddr = srcAddr;
+        this->hash = hash;
+        this->disclosure_time = disclosure_time;
+        this->mode = TESLA;
     }
 
     string serialize() const override {
@@ -247,109 +378,34 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
     
 };
 
-struct RERR : public MESSAGE { // INCOMPLETE
-    string srcAddr;
+struct DATA_MESSAGE : public MESSAGE {
     string destAddr;
-    unsigned long destSeqNum;
-    string auth;
-    string MAC;
-    unsigned long hopCount;
-    int HERR;
-
-    RERR() {
-        this->type = ROUTE_ERROR;
-        this->destSeqNum = 0;
-        this->auth = "";
-        this->MAC = "";
-        this->hopCount = 0;
-        this->HERR = 0;
-    }
-
-    string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"srcAddr", this->srcAddr},
-            {"destAddr", this->destAddr},
-            {"destSeqNum", this->destSeqNum},
-            {"auth", this->auth},
-            {"MAC", this->MAC},
-            {"hopCount", this->hopCount},
-            {"HERR", this->HERR}
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->srcAddr = j["srcAddr"];
-        this->destAddr = j["destAddr"];
-        this->destSeqNum = j["destSeqNum"];
-        this->auth = j["auth"];
-        this->MAC = j["MAC"];
-        this->hopCount = j["hopCount"];
-        this->HERR = j["HERR"];
-    }
-};
-
-struct TESLA_MESSAGE : public MESSAGE {
-    enum TSLA_MODE {
-        INIT,
-        DATA, // for case RERR
-        DISCLOSE
-    };
-
-    string srcAddr;
-    string hashKey;
-    string mac;
     string data;
-    int disclosure_time;
-    TSLA_MODE mode;
 
-    TESLA_MESSAGE() {
-        this->type = TESLA_MSG;
-        this->hashKey = "ERR";
-    }
-    
-    void set_init(string srcAddr, string hashKey, int disclosure_time) {
-        this->srcAddr = srcAddr;
-        this->mode = INIT;
-        this->hashKey = hashKey;
-        this->disclosure_time = disclosure_time;
+    DATA_MESSAGE() {
+        this->type = DATA;
+        this->destAddr = "";
+        this->data = "";
     }
 
-    void set_disclose(string srcAddr, string hashKey) {
-        this->srcAddr = srcAddr;
-        this->mode = DISCLOSE;
-        this->hashKey = hashKey;
-    }
-
-    void set_data(string srcAddr, string mac, string data) {
-        this->srcAddr = srcAddr;
-        this->mode = DATA;
-        this->mac = mac;
+    DATA_MESSAGE(string srcAddr, string destAddr, string data) {
+        this->type = DATA;
+        this->destAddr = destAddr;
         this->data = data;
     }
 
     string serialize() const override {
         json j = json{
-            {"srcAddr", this->srcAddr},
             {"type", this->type},
-            {"hashKey", this->hashKey},
-            {"disclosure_time", this->disclosure_time},
-            {"mode", this->mode},
-            {"mac", this->mac},
+            {"destAddr", this->destAddr},
             {"data", this->data}
         };
         return j.dump();
     }
 
     void deserialize(json& j) override {
-        this->srcAddr = j["srcAddr"];
         this->type = j["type"];
-        this->hashKey = j["hashKey"];
-        this->disclosure_time = j["disclosure_time"];
-        this->mode = j["mode"];
-        this->mac = j["mac"];
+        this->destAddr = j["destAddr"];
         this->data = j["data"];
     }
 };
