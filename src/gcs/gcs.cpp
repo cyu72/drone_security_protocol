@@ -135,7 +135,7 @@ void initializeServer() {
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Exit " << endl;
+        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Send auto-routed message\n6) Exit " << endl;
         cout << "> ";
         std::cin >> inn;
 
@@ -180,6 +180,17 @@ void initializeServer() {
                 sendDataUDP(containerName, jsonStr);
                 break;
             case 5:
+                cout << "Enter drone ID [number]: ";
+                std::cin >> inn1;
+                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                cout << "Enter destination ID [number]: ";
+                std::cin >> inn1;
+                destAddr = "drone" + std::to_string(inn1) + "-service.default";
+                msg = GCS_MESSAGE("NILL", destAddr, DATA);
+                jsonStr = msg.serialize();
+                sendData(containerName, jsonStr);
+                break;
+            case 6:
                 return;
             default:
                 break;
