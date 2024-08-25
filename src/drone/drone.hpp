@@ -2,7 +2,6 @@
 #define DRONE_HPP
 #define PORT_NUMBER 80
 #define BRDCST_PORT 65457
-#include <iostream>
 #include <cstring>
 #include <mutex>
 #include <cstdlib>
@@ -18,6 +17,10 @@
 #include <unordered_set>
 #include <stdexcept>
 #include <sstream>
+#include <vector>
+#include <random>
+#include <sstream>
+#include <iostream>
 #include <iomanip>
 #include <netdb.h>
 #include <nlohmann/json.hpp>
@@ -31,7 +34,6 @@
 #include "messages.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
-#include "multi_index_container.hpp"
 #include "network_adapters/kube_udp_interface.hpp"
 #include "network_adapters/tcp_interface.hpp"
 
@@ -41,59 +43,50 @@ using std::endl;
 using std::string;
 
 class drone {
-    public: // everything public for now
+    public:
         drone();
         drone(int port, int nodeID);
+        void start();
+        int send(const string&, const string&);
+
+    private:
+        class TESLA {
+            public:
+                TESLA();
+                ~TESLA();
+
+                RoutingMap<string, ROUTING_TABLE_ENTRY> routingTable;
+                const std::chrono::seconds disclosure_interval = std::chrono::seconds(std::stoul(std::getenv("TESLA_DISCLOSE")));
+                INIT_MESSAGE init_tesla(const string&);
+                string getCurrentHash();
+
+            private:
+                struct TimedHash {
+                    std::chrono::system_clock::time_point disclosure_time;
+                    std::string hash;
+                };
+
+                string addr;
+                const unsigned int key_lifetime = 10800; // Hardcoded: 10800 seconds
+                const unsigned int numKeys = key_lifetime / disclosure_interval.count();
+                // unsigned char (*hashChain)[SHA256_DIGEST_LENGTH];
+
+                std::string sha256(const std::string&);
+                std::string createHMAC(const std::string& key, const std::string& data);
+                void generateHashChain();
+                void compareHashes(const unsigned char *hash1, const unsigned char *hash2);
+
+                /* We can associate each nonce/auth with the specific disclosure time, starting with the beginning of the array at time 0, time n, time 2n, etc. where n is the disclosure time */
+                std::vector<string> nonce_list;
+                std::deque<TimedHash> timed_hash_chain;
+        };
+        TESLA tesla;
 
         string addr;
         int port;
         unsigned long seqNum;
         int nodeID;
         std::deque<string> hashChainCache; 
-        class TESLA {
-            struct msg {
-                std::string data; // Type: RERR, assume the data is in string form
-                std::string MAC; // temp: assume MAC is in string form
-                std::chrono::steady_clock::time_point tstamp;
-                msg(string, string, std::chrono::steady_clock::time_point){
-                    this->data = data;
-                    this->MAC = MAC;
-                    this->tstamp = tstamp;
-                }
-                bool operator<(const msg& other) const {
-                    return tstamp > other.tstamp;
-                }
-            };
-
-            public:
-                TESLA();
-                ~TESLA();
-
-                RoutingMap<string, ROUTING_TABLE_ENTRY> routingTable;
-                const unsigned int disclosure_time = std::stoul((std::getenv("TESLA_DISCLOSE")));
-
-                TESLA_MESSAGE init_tesla(const string&);
-                // need function to disclose hashes ever t
-                std::string hash_disclosure();
-                // need to function that actually allows us to send messages with MACs
-                void recv(json&);
-                std::set<msg> mac_q;
-            private:
-                string addr;
-                const unsigned int key_lifetime = 10800; // Hardcoded: 10800 seconds
-                PacketStore packetStore;
-                const unsigned int numKeys = key_lifetime / disclosure_time;
-                // unsigned char (*hashChain)[SHA256_DIGEST_LENGTH];
-                std::deque<std::string> hash_chain;
-
-                void send(int);
-                std::string sha256(const std::string&);
-                std::string createHMAC(const std::string& key, const std::string& data);
-                void generateHashChain();
-                void compareHashes(const unsigned char *hash1, const unsigned char *hash2);
-        };
-
-        TESLA tesla;
 
         void broadcast(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
         void sendData(string containerName, const string& msg);
@@ -104,12 +97,11 @@ class drone {
         void routeReplyHandler(json& data);
         void routeErrorHandler(MESSAGE &msg);
         void clientResponseThread(const string& msg);
-        void initRouteDiscovery(json& data);
+        void initRouteDiscovery(const string&);
         void verifyRouteHandler(json& data);
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
-        void start();
-    private:
+
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT")));; // Maximum number of nodes we can/allow route through
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
@@ -117,6 +109,8 @@ class drone {
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
         std::mutex helloRecvTimerMutex, routingTableMutex;
+
+        string generate_nonce(const size_t length = 16);
  
 };
 
