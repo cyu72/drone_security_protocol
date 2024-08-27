@@ -30,10 +30,10 @@ enum MESSAGE_TYPE {
     ROUTE_REPLY, 
     ROUTE_ERROR,
     DATA,
-    INIT_ROUTE_DISCOVERY, // temp
+    INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
     VERIFY_ROUTE,
     HELLO, // Broadcast Msg
-    TESLA_MSG,
+    INIT_AUTO_DISCOVERY,
     EXIT
 };
 
@@ -191,6 +191,11 @@ struct HERR {
             ss << std::hex << std::setw(2) << std::setfill('0') << (int)digest[i];
         }
         return ss.str();
+    }
+
+    friend std::ostream& operator<<(std::ostream& os, const HERR& herr) {
+        os << "HERR{hRERR: " << herr.hRERR << ", mac_t: " << herr.mac_t << "}";
+        return os;
     }
 
 };
@@ -388,7 +393,7 @@ struct DATA_MESSAGE : public MESSAGE {
         this->data = "";
     }
 
-    DATA_MESSAGE(string srcAddr, string destAddr, string data) {
+    DATA_MESSAGE(string destAddr, string data) {
         this->type = DATA;
         this->destAddr = destAddr;
         this->data = data;

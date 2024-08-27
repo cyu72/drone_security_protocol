@@ -1,6 +1,7 @@
 #include <iostream>
 #include <unordered_map>
 #include <chrono>
+#include <optional>
 #include <string>
 #include "routingTableEntry.hpp"
 
@@ -46,9 +47,38 @@ public:
 
     void print() const {
         for (const auto& pair : map) {
-            std::cout << "Key: " << pair.first << ", Value: " << pair.second << std::endl;
+            std::cout << "Key: " << pair.first << ", Value: ";
+            pair.second.print();
         }
     }
+
+    void insert(const Key& key, const Value& value, std::optional<HERR> herr_val = std::nullopt) {
+        auto it = map.find(key);
+        
+        if (it == map.end()) {
+            map[key] = value;
+            if (herr_val) {
+                map[key].insertHERR(*herr_val);
+            }
+        } else {
+            if (herr_val) {
+                // Update everything
+                it->second = value;
+                it->second.insertHERR(*herr_val);
+            } else {
+                // Update entry completely except for ttl
+                it->second.destAddr = value.destAddr;
+                it->second.nextHopID = value.nextHopID;
+                it->second.seqNum = value.seqNum;
+                it->second.cost = value.cost;
+                it->second.hash = value.hash;
+                it->second.tesla_hash = value.tesla_hash;
+                it->second.tesla_disclosure_time = value.tesla_disclosure_time;
+            }
+        }
+
+    }
+ 
 
 private:
     std::unordered_map<Key, Value> map;

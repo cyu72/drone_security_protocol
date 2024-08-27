@@ -2,6 +2,8 @@
 #include <iostream>
 #include <tuple>
 #include <chrono>
+#include <queue>
+#include "messages.hpp"
 
 using std::string;
 using std::cout;
@@ -16,8 +18,8 @@ struct ROUTING_TABLE_ENTRY {
     std::chrono::system_clock::time_point ttl; // Starting Timestamp at which this entry was created
     string tesla_hash;
     std::chrono::seconds tesla_disclosure_time;
-    string hash;
-    bool has_mac = false; // tells us if we are waiting for a haskey to decrypt a mac message for this node
+    string hash; // Most recent authenticator hash
+    std::queue<HERR> herr;
 
     ROUTING_TABLE_ENTRY(){
         this->destAddr = "ERR";
@@ -37,12 +39,30 @@ struct ROUTING_TABLE_ENTRY {
         this->seqNum = seqNum;
         this->cost = cost;
         this->ttl = ttl;
-        this->hash = hash; // What is this field supposed to contain again
+        this->hash = hash;
     }
 
-    void print() {
+    ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash, HERR herr){
+        this->destAddr = destAddr;
+        this->nextHopID = nextHopID;
+        this->seqNum = seqNum;
+        this->cost = cost;
+        this->ttl = ttl;
+        this->hash = hash;
+        this->insertHERR(herr);
+    }
+
+    void print() const {
         auto ttl_seconds = std::chrono::duration_cast<std::chrono::seconds>(ttl.time_since_epoch()).count();
-        cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl_seconds << " seconds, hash: " << hash << endl;
+        cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl_seconds << " seconds, tesla_hash: " << tesla_hash << ", tesla_disclosure_time: " << tesla_disclosure_time.count() << " seconds, hash: " << hash << ", herr: ";
+        
+        std::queue<HERR> temp = herr;
+        while (!temp.empty()) {
+            cout << temp.front() << " ";
+            temp.pop();
+        }
+        
+        cout << endl;
     }
 
     std::tuple<string, std::chrono::seconds> getTeslaInfo() {
@@ -62,5 +82,14 @@ struct ROUTING_TABLE_ENTRY {
            << ", seqNum: " << entry.seqNum << ", cost: " << entry.cost
            << ", ttl: " << std::chrono::duration_cast<std::chrono::seconds>(entry.ttl.time_since_epoch()).count() << " seconds, hash: " << entry.hash << " }";
         return os;
+    }
+
+    void insertHERR(const HERR& herr) {
+        this->herr.push(herr);
+        
+        // If queue size exceeds 15, remove the oldest element
+        while (this->herr.size() > 15) {
+            this->herr.pop();
+        }
     }
 };
