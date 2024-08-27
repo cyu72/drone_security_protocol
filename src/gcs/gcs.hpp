@@ -27,9 +27,10 @@ enum MESSAGE_TYPE {
     ROUTE_REPLY, 
     ROUTE_ERROR,
     DATA,
-    INIT_ROUTE_DISCOVERY, // GCS -> Drone to initiate route discovery
-    VERIFY_ROUTE, // GCS -> Drone to verify route
-    INIT_MSG, // used to init drone swarm
+    INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
+    VERIFY_ROUTE,
+    HELLO, // Broadcast Msg
+    INIT_AUTO_DISCOVERY,
     EXIT
 };
 
@@ -182,39 +183,6 @@ struct RREP : public MESSAGE {
         this->HERR = j["HERR"];
     }
 
-};
-
-struct INIT_MESSAGE : public MESSAGE {
-    string hash;
-    string srcAddr;
-
-    INIT_MESSAGE() {
-        this->type = INIT_MSG;
-        hash = "";
-        srcAddr = "";
-    }
-
-    INIT_MESSAGE(string hash, string addr) {
-        this->type = INIT_MSG;
-        this->hash = hash;
-        this->srcAddr = addr;
-    }
-
-    string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"hash", this->hash},
-            {"srcAddr", this->srcAddr}
-        };
-        return j.dump();
-    }
-
-    void deserialize(json& j) override {
-        this->type = j["type"];
-        this->hash = j["hash"];
-        this->srcAddr = j["srcAddr"];
-    }
-    
 };
 
 #endif
