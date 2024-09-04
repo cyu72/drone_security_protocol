@@ -16,6 +16,7 @@ parser.add_argument('--drone_count', type=int, default=15, help='Specify number 
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
+# parser.add_argument('--timeout_sec', type=int, default=3, help='Timeout for TCP data connections')
 args = parser.parse_args()
 
 droneNum = args.drone_count
@@ -358,34 +359,33 @@ def update_network_policies(matrix):
     
     subprocess.run("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", shell=True, check=True)
 
-def move_drone(matrix, from_pos, to_pos):
-    from_i, from_j = from_pos
+def move_drone(matrix, drone, to_pos):
     to_i, to_j = to_pos
-    drone = matrix[from_i][from_j]
-    matrix[from_i][from_j] = 0
-    matrix[to_i][to_j] = drone
-    return matrix
+    for i in range(len(matrix)):
+        for j in range(len(matrix[i])):
+            if matrix[i][j] == drone:
+                matrix[i][j] = 0
+                matrix[to_i][to_j] = drone
+                return matrix
+    raise ValueError(f"Drone {drone} not found in the matrix")
 
 while True:
     print_matrix(matrix)
-    user_input = input("Enter move (drone_number from_i from_j to_i to_j) or 'q' to quit: ")
+    user_input = input("Enter move (drone_number to_i to_j) or 'q' to quit: ")
     
     if user_input.lower() == 'q':
         break
     
     try:
-        drone, from_i, from_j, to_i, to_j = map(int, user_input.split())
-        if matrix[from_i][from_j] != drone:
-            print(f"Error: Drone {drone} is not at position ({from_i}, {from_j})")
-            continue
+        drone, to_i, to_j = map(int, user_input.split())
         if matrix[to_i][to_j] != 0:
             print(f"Error: Position ({to_i}, {to_j}) is not empty")
             continue
         
-        matrix = move_drone(matrix, (from_i, from_j), (to_i, to_j))
+        matrix = move_drone(matrix, drone, (to_i, to_j))
         update_network_policies(matrix)
         print("Network policies updated.")
-    except ValueError:
-        print("Invalid input. Please use format: drone_number from_i from_j to_i to_j")
+    except ValueError as e:
+        print(f"Error: {str(e)}")
     except IndexError:
         print("Invalid position. Please ensure all indices are within the matrix bounds.")
