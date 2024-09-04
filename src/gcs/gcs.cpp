@@ -135,7 +135,7 @@ void initializeServer() {
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Send auto-routed message\n6) Exit " << endl;
+        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Send auto-routed message\n6) Send to IP\n7) Exit " << endl;
         cout << "> ";
         
         string input;
@@ -239,6 +239,21 @@ void initializeServer() {
                 sendData(containerName, jsonStr);
                 break;
             case 6:
+                cout << "Enter IP address: ";
+                std::getline(std::cin, destAddr);
+                if (destAddr.empty()) {
+                    cout << "No IP address entered. Returning to main menu." << endl;
+                    continue;
+                }
+                cout << "Enter message: ";
+                std::getline(std::cin, jsonStr);
+                if (jsonStr.empty()) {
+                    cout << "No message entered. Returning to main menu." << endl;
+                    continue;
+                }
+                sendData(destAddr, jsonStr);
+                break;
+            case 7:
                 return;
             default:
                 cout << "Invalid option. Please try again." << endl;
