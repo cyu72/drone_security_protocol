@@ -19,11 +19,14 @@ ENV PATH="/app/venv/bin:$PATH"
 
 RUN pip3 install flask
 
-COPY drone/*.cpp drone/*.hpp drone/CMakeLists.txt drone/initScript.py /app/
-COPY drone/network_adapters/* /app/network_adapters/
+# Copy the entire project structure
+COPY drone_security_protocol /app/drone_security_protocol
 
-RUN cmake .
-RUN make
+# Set the working directory to the project root
+WORKDIR /app/drone_security_protocol
+
+# Create build directory and run CMake
+RUN mkdir build && cd build && cmake .. && make
 
 EXPOSE 65456
 

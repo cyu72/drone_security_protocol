@@ -4,6 +4,10 @@ project(drone)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+include_directories(${PROJECT_SOURCE_DIR}/include)
 include(FetchContent)
 
 FetchContent_Declare(
@@ -19,13 +23,11 @@ find_package(OpenSSL REQUIRED)
 enable_testing()
 add_executable(
     drone
-    drone.cpp
-    tesla.cpp
-    hashTree.cpp
-    routingMap.hpp
+    ${SOURCES}
 )
 target_link_libraries(
     drone
+    PRIVATE
     nlohmann_json::nlohmann_json
     ssl
     crypto
