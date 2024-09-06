@@ -18,10 +18,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "1"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -37,9 +44,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -66,10 +77,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "2"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -85,9 +103,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -114,10 +136,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "3"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -133,9 +162,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -162,10 +195,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "4"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -181,9 +221,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -210,10 +254,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "5"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -229,9 +280,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -258,10 +313,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "6"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -277,9 +339,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -306,10 +372,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "7"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -325,9 +398,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -354,10 +431,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "8"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -373,9 +457,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -402,10 +490,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "9"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -421,9 +516,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -450,10 +549,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "10"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -469,9 +575,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -498,10 +608,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "11"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -517,9 +634,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -546,10 +667,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "12"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -565,9 +693,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -594,10 +726,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "13"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -613,9 +752,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -642,10 +785,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "14"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -661,9 +811,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -690,10 +844,17 @@ spec:
           value: "65456"
         - name: PARAM3
           value: "15"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "8"
       ports:
         - name: action-port
-          protocol: UDP
+          protocol: TCP
           containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
         - name: start-port
           protocol: TCP
           containerPort: 8080
@@ -709,9 +870,13 @@ spec:
     tier: drone
   ports:
   - name: drone-port
-    protocol: UDP
+    protocol: TCP
     port: 80
     targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
   - name: start-port
     protocol: TCP
     port: 8080
@@ -734,8 +899,12 @@ spec:
       stdin: true
       tty: true
       ports:
-        - protocol: UDP
+        - name: main-port
+          protocol: TCP
           containerPort: 65456
+        - name: udp-test-port
+          protocol: UDP
+          containerPort: 65457
 ---
 apiVersion: v1
 kind: ConfigMap

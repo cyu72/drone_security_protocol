@@ -4,9 +4,10 @@ project(drone)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Add the path to CMake's module path where it can find additional libraries (if needed)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+
+include_directories(${PROJECT_SOURCE_DIR}/include)
 include(FetchContent)
 
 FetchContent_Declare(
@@ -19,21 +20,15 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenSSL REQUIRED)
 
-find_package(Boost REQUIRED)
-include_directories(${Boost_INCLUDE_DIRS})
-
 enable_testing()
 add_executable(
     drone
-    drone.cpp
-    tesla.cpp
-    hashTree.cpp
-    routingMap.hpp
+    ${SOURCES}
 )
 target_link_libraries(
     drone
+    PRIVATE
     nlohmann_json::nlohmann_json
     ssl
     crypto
-    ${Boost_LIBRARIES}
 )

@@ -135,20 +135,45 @@ void initializeServer() {
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Exit " << endl;
+        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Send auto-routed message\n6) Send to IP\n7) Exit " << endl;
         cout << "> ";
-        std::cin >> inn;
+        
+        string input;
+        std::getline(std::cin, input);
+        
+        if (input.empty()) {
+            continue;
+        }
+        
+        int inn;
+        try {
+            inn = std::stoi(input);
+        } catch (const std::invalid_argument& e) {
+            cout << "Invalid input. Please enter a number." << endl;
+            continue;
+        } catch (const std::out_of_range& e) {
+            cout << "Input out of range. Please try again." << endl;
+            continue;
+        }
 
         GCS_MESSAGE msg;
         string jsonStr, destAddr;
         switch(inn) {
             case 1:
                 cout << "Enter drone ID [number]: ";
-                std::cin >> inn1;
-                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                containerName = "drone" + input + "-service.default";
                 cout << "Enter destination ID [number]: ";
-                std::cin >> inn1;
-                destAddr = "drone" + std::to_string(inn1) + "-service.default";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                destAddr = "drone" + input + "-service.default";
                 if (containerName == destAddr) {
                     cout << "Error: Cannot send message to self" << endl;
                     break;
@@ -159,29 +184,79 @@ void initializeServer() {
                 break;
             case 2:
                 cout << "Enter drone ID [number]: ";
-                std::cin >> inn1;
-                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                containerName = "drone" + input + "-service.default";
                 msg = GCS_MESSAGE(containerName, "NILL", VERIFY_ROUTE);
                 jsonStr = msg.serialize();
                 sendData(containerName, jsonStr);
                 break;
             case 3:
                 cout << "Enter drone ID [number]: ";
-                std::cin >> inn1;
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
                 // Add deletion functionality here.
                 break;
             case 4:
                 cout << "Enter drone ID [number]: ";
-                std::cin >> inn1;
-                containerName = "drone" + std::to_string(inn1) + "-service.default";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                containerName = "drone" + input + "-service.default";
                 cout << "Enter UDP message: ";
-                std::cin.ignore(); // Ignore the newline character left by previous input
                 std::getline(std::cin, jsonStr);
+                if (jsonStr.empty()) {
+                    cout << "No message entered. Returning to main menu." << endl;
+                    continue;
+                }
                 sendDataUDP(containerName, jsonStr);
                 break;
             case 5:
+                cout << "Enter drone ID [number]: ";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                containerName = "drone" + input + "-service.default";
+                cout << "Enter destination ID [number]: ";
+                std::getline(std::cin, input);
+                if (input.empty()) {
+                    cout << "No input received. Returning to main menu." << endl;
+                    continue;
+                }
+                destAddr = "drone" + input + "-service.default";
+                msg = GCS_MESSAGE("NILL", destAddr, INIT_AUTO_DISCOVERY);
+                jsonStr = msg.serialize();
+                sendData(containerName, jsonStr);
+                break;
+            case 6:
+                cout << "Enter IP address: ";
+                std::getline(std::cin, destAddr);
+                if (destAddr.empty()) {
+                    cout << "No IP address entered. Returning to main menu." << endl;
+                    continue;
+                }
+                cout << "Enter message: ";
+                std::getline(std::cin, jsonStr);
+                if (jsonStr.empty()) {
+                    cout << "No message entered. Returning to main menu." << endl;
+                    continue;
+                }
+                sendData(destAddr, jsonStr);
+                break;
+            case 7:
                 return;
             default:
+                cout << "Invalid option. Please try again." << endl;
                 break;
         }
     }

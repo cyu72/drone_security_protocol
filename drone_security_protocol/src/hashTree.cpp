@@ -1,11 +1,10 @@
-#include "hashTree.hpp"
+#include <routing/hashTree.hpp>
 
 HashTree::TreeNode::TreeNode(const string& data, bool isHash) : left(nullptr), right(nullptr) { 
     if (isHash) {
         hash = data;
     } else {
         hash = hashString(data);
-        cout << "hash: " << hash << endl;
     }
 }
 
@@ -232,7 +231,7 @@ void HashTree::addSelf(const string& droneID, const int& incomingHopCount){
     string finalHash = recalculate(this->getRoot()->right, (totalAvailableNodes / 2), totalAvailableNodes + 1, totalAvailableNodes + (totalAvailableNodes / 2) + 1, leafLevel - 1, incomingHopCount, droneID);
     string rootHash = hashNodes(this->getRoot()->left->getHash(), finalHash);
     this->getRoot()->updateHash(rootHash);
-    cout << "This is the final root hash: " << rootHash << endl;
+    // cout << "This is the final root hash: " << rootHash << endl;
 }
 
 string HashTree::recalculate(TreeNode* node, const int& nodesAvail, const int& leftIndex, const int& rightIndex, const int& leafLevel, const int& incomingHopCount, const string& droneID){

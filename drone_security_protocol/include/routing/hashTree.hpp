@@ -56,7 +56,7 @@ public:
         if (node->right != nullptr) {
             deleteTree(node->right);
         }
-        cout << "deleting node: " << node->hash << endl;
+        // cout << "deleting node: " << node->hash << endl;
         delete node;
     }
 
