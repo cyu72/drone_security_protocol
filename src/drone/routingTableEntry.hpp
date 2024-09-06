@@ -10,9 +10,8 @@ using std::cout;
 using std::endl;
 
 struct ROUTING_TABLE_ENTRY {
-    /*TODO: Add TESLA MAC QUEUE and ENSUING INFORMATION AND NEW VARIABLE OF HOW OFTEN THIS TABLE GETS CLEANED UP*/
     string destAddr;
-    string nextHopID; // srcAddr = destAddr if neighbor
+    string intermediateAddr; // srcAddr = destAddr if neighbor
     int seqNum; // Destination SeqNum
     int cost; // HopCount to reach destination
     std::chrono::system_clock::time_point ttl; // Starting Timestamp at which this entry was created
@@ -23,7 +22,7 @@ struct ROUTING_TABLE_ENTRY {
 
     ROUTING_TABLE_ENTRY(){
         this->destAddr = "ERR";
-        this->nextHopID = "ERR";
+        this->intermediateAddr = "ERR";
         this->seqNum = -1;
         this->cost = -1;
         this->ttl = std::chrono::system_clock::now(); // Starting Timestamp at which this entry was created
@@ -33,18 +32,18 @@ struct ROUTING_TABLE_ENTRY {
     }
 
     // TODO: Must fix all instances of ttl
-    ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash){
+    ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash){
         this->destAddr = destAddr;
-        this->nextHopID = nextHopID;
+        this->intermediateAddr = intermediateAddr;
         this->seqNum = seqNum;
         this->cost = cost;
         this->ttl = ttl;
         this->hash = hash;
     }
 
-    ROUTING_TABLE_ENTRY(string destAddr, string nextHopID, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash, HERR herr){
+    ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash, HERR herr){
         this->destAddr = destAddr;
-        this->nextHopID = nextHopID;
+        this->intermediateAddr = intermediateAddr;
         this->seqNum = seqNum;
         this->cost = cost;
         this->ttl = ttl;
@@ -54,7 +53,7 @@ struct ROUTING_TABLE_ENTRY {
 
     void print() const {
         auto ttl_seconds = std::chrono::duration_cast<std::chrono::seconds>(ttl.time_since_epoch()).count();
-        cout << "Routing entry: " << "destAddr: " << destAddr << ", nextHopID: " << nextHopID << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl_seconds << " seconds, tesla_hash: " << tesla_hash << ", tesla_disclosure_time: " << tesla_disclosure_time.count() << " seconds, hash: " << hash << ", herr: ";
+        cout << "Routing entry: " << "destAddr: " << destAddr << ", intermediateAddr: " << intermediateAddr << ", seqNum: " << seqNum << ", cost: " << cost << ", ttl: " << ttl_seconds << " seconds, tesla_hash: " << tesla_hash << ", tesla_disclosure_time: " << tesla_disclosure_time.count() << " seconds, hash: " << hash << ", herr: ";
         
         std::queue<HERR> temp = herr;
         while (!temp.empty()) {
@@ -78,7 +77,7 @@ struct ROUTING_TABLE_ENTRY {
     }
 
     friend std::ostream& operator<<(std::ostream& os, const ROUTING_TABLE_ENTRY& entry) {
-        os << "{ destAddr: " << entry.destAddr << ", nextHopID: " << entry.nextHopID
+        os << "{ destAddr: " << entry.destAddr << ", intermediateAddr: " << entry.intermediateAddr
            << ", seqNum: " << entry.seqNum << ", cost: " << entry.cost
            << ", ttl: " << std::chrono::duration_cast<std::chrono::seconds>(entry.ttl.time_since_epoch()).count() << " seconds, hash: " << entry.hash << " }";
         return os;
@@ -91,5 +90,21 @@ struct ROUTING_TABLE_ENTRY {
         while (this->herr.size() > 15) {
             this->herr.pop();
         }
+
+        // temp debug
+        cout << "Updated HERR queue: ";
+        std::queue<HERR> temp = this->herr;
+        while (!temp.empty()) {
+            cout << temp.front() << " ";
+            temp.pop();
+        }
+        cout << endl;
     }
+
+    HERR getMostRecentHERR() const { // TEMP: may replace queue with just singular herr
+    if (herr.empty()) {
+        throw std::runtime_error("Queue is empty");
+    }
+    return herr.back();
+}
 };

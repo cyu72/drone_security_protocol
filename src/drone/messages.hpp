@@ -81,10 +81,14 @@ struct RERR : public MESSAGE {
     std::vector<string> tsla_list;
     std::vector<string> dst_list;
     std::vector<string> auth_list;
+    std::string retAddr; // Temp
 
-    RERR() {}
+    RERR() {
+        this->type = ROUTE_ERROR;
+    }
 
     RERR(std::vector<string> nonce_list, std::vector<string> tsla_list, std::vector<string> dst_list, std::vector<string> auth_list) {
+        this->type = ROUTE_ERROR;
         this->nonce_list = nonce_list;
         this->tsla_list = tsla_list;
         this->dst_list = dst_list;
@@ -95,27 +99,41 @@ struct RERR : public MESSAGE {
                             const std::vector<string>& tsla_list, 
                             const std::vector<string>& dst_list, 
                             const std::vector<string>& auth_list) {
+        this->type = ROUTE_ERROR;
         this->nonce_list = nonce_list;
         this->tsla_list = tsla_list;
         this->dst_list = dst_list;
         this->auth_list = auth_list;
     }
 
+    void create_rerr(const string& nonce, const string& tsla_nonce, const string& dst, const string& auth) {
+        this->type = ROUTE_ERROR;
+        this->nonce_list = {nonce};
+        this->tsla_list = {tsla_nonce};
+        this->dst_list = {dst};
+        this->auth_list = {auth};
+    }
+
+    void addRetAddr(const string& addr){
+        this->retAddr = addr;
+    }
+
     void create_rerr_prime(const string& nonce, const string& dst, const string& auth) {
+        this->type = ROUTE_ERROR;
         this->nonce_list = {nonce};
         this->tsla_list = {};  // Empty for RERR'
         this->dst_list = {dst};
         this->auth_list = {auth};
     }
 
-    string serialize() const override {
-        json j = json{
-            {"type", this->type},
-            {"nonce_list", this->nonce_list},
-            {"tsla_list", this->tsla_list},
-            {"dst_list", this->dst_list},
-            {"auth_list", this->auth_list}
-        };
+    string serialize() const {
+        json j = json::object();
+        j["auth_list"] = this->auth_list;
+        j["dst_list"] = this->dst_list;
+        j["nonce_list"] = this->nonce_list;
+        j["retAddr"] = this->retAddr;
+        j["tsla_list"] = this->tsla_list;
+        j["type"] = this->type;
         return j.dump();
     }
 
@@ -125,6 +143,7 @@ struct RERR : public MESSAGE {
         this->tsla_list = j["tsla_list"].get<std::vector<string>>();
         this->dst_list = j["dst_list"].get<std::vector<string>>();
         this->auth_list = j["auth_list"].get<std::vector<string>>();
+        this->retAddr = j["retAddr"];
     }
 };
 
@@ -148,23 +167,32 @@ struct HERR {
     bool verify(const RERR& rerr, const string& tesla_key) const {
         string computed_hash = compute_hash(rerr);
         string computed_mac = compute_mac(computed_hash, tesla_key);
+        cout << "Computed Hash: " << computed_hash << endl;
+        cout << "Computed MAC: " << computed_mac << endl;
+        cout << "hRERR: " << hRERR << endl;
+        cout << "mac_t: " << mac_t << endl;
         return (computed_hash == hRERR) && (computed_mac == mac_t);
     }
     
-    json to_json() const {
+    json to_json() const { // FOR DEBUG PURPOSES ONLY
         return json{
             {"hRERR", hRERR},
             {"mac_t", mac_t}
         };
     }
 
-    static HERR from_json(const json& j) {
+    static HERR from_json(const json& j) { // FOR DEBUG PURPOSES ONLY
         return HERR(j["hRERR"], j["mac_t"]);
     }
 
     private:
     static string compute_hash(const RERR& rerr) {
         string serialized_rerr = rerr.serialize();
+        cout << "Serialized RERR (hex): ";
+        for(char c : serialized_rerr) {
+            cout << std::hex << std::setw(2) << std::setfill('0') << (int)(unsigned char)c;
+        }
+        cout << endl;
         unsigned char hash[SHA256_DIGEST_LENGTH];
         SHA256_CTX sha256;
         SHA256_Init(&sha256);
@@ -197,12 +225,11 @@ struct HERR {
         os << "HERR{hRERR: " << herr.hRERR << ", mac_t: " << herr.mac_t << "}";
         return os;
     }
-
 };
 
 struct RREQ : public MESSAGE {
     string srcAddr;
-    string intermediateAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
+    string recvAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
     string destAddr; 
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
@@ -227,7 +254,7 @@ struct RREQ : public MESSAGE {
          string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash) {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr;
-        this->intermediateAddr = interAddr;
+        this->recvAddr = interAddr;
         this->destAddr = destAddr;
         this->srcSeqNum = srcSeqNum;
         this->destSeqNum = destSeqNum;
@@ -244,7 +271,7 @@ struct RREQ : public MESSAGE {
             {"type", this->type},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
-            {"intermediateAddr", this->intermediateAddr},
+            {"recvAddr", this->recvAddr},
             {"srcSeqNum", this->srcSeqNum},
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
@@ -262,7 +289,7 @@ struct RREQ : public MESSAGE {
         this->type = j["type"];
         this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
-        this->intermediateAddr = j["intermediateAddr"];
+        this->recvAddr = j["recvAddr"];
         this->srcSeqNum = j["srcSeqNum"];
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
@@ -276,7 +303,7 @@ struct RREQ : public MESSAGE {
 
 struct RREP : public MESSAGE {
     string srcAddr;
-    string intermediateAddr; // same temp field as RREQ
+    string recvAddr; // same temp field as RREQ
     string destAddr;
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
@@ -311,12 +338,12 @@ struct RREP : public MESSAGE {
             {"type", this->type},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
-            {"intermediateAddr", this->intermediateAddr},
+            {"recvAddr", this->recvAddr},
             {"srcSeqNum", this->srcSeqNum},
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"herr", this->herr.to_json()},
+            {"herr", this->herr.to_json()}, // FOR DEBUG PURPOSES ONLY
             {"ttl", this->ttl}
         };
         return j.dump();
@@ -326,12 +353,12 @@ struct RREP : public MESSAGE {
         this->type = j["type"];
         this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
-        this->intermediateAddr = j["intermediateAddr"];
+        this->recvAddr = j["recvAddr"];
         this->srcSeqNum = j["srcSeqNum"];
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->herr = HERR::from_json(j["herr"]);
+        this->herr = HERR::from_json(j["herr"]); // FOR DEBUG PURPOSES ONLY
         this->ttl = j["ttl"];
     }
 
@@ -385,6 +412,7 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
 
 struct DATA_MESSAGE : public MESSAGE {
     string destAddr;
+    string srcAddr;
     string data;
 
     DATA_MESSAGE() {
@@ -393,8 +421,9 @@ struct DATA_MESSAGE : public MESSAGE {
         this->data = "";
     }
 
-    DATA_MESSAGE(string destAddr, string data) {
+    DATA_MESSAGE(string destAddr, string srcAddr, string data) {
         this->type = DATA;
+        this->srcAddr = srcAddr;
         this->destAddr = destAddr;
         this->data = data;
     }
@@ -402,6 +431,7 @@ struct DATA_MESSAGE : public MESSAGE {
     string serialize() const override {
         json j = json{
             {"type", this->type},
+            {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
             {"data", this->data}
         };
@@ -411,6 +441,7 @@ struct DATA_MESSAGE : public MESSAGE {
     void deserialize(json& j) override {
         this->type = j["type"];
         this->destAddr = j["destAddr"];
+        this->srcAddr = j["srcAddr"];
         this->data = j["data"];
     }
 };

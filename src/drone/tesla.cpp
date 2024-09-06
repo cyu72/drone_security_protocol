@@ -1,18 +1,4 @@
-#include <boost/multi_index_container.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/member.hpp>
 #include "drone.hpp"
-
-/*
-Create a queue for RERRs. Queue is sorted FIFO
-Every time we recieve TESLA msg, check if queue has elements. (Do nothing if not)
-If element has time sync past the bounds of current message, delete all elements in queue.
-Else, if it fits, pop more recent RERR and process.
-
-Data Structures: 
-Multi-Index Container to hold pending RERRs (within TESLA class)
-Place TESLA key msgs in circular buffer (within TESLA class)
-*/
 
 std::string drone::TESLA::createHMAC(const std::string& key, const std::string& data) {
     unsigned char* digest;
@@ -49,16 +35,17 @@ drone::TESLA::~TESLA() {
     // delete[] hashChain;
 }
 
-TESLA_MESSAGE drone::TESLA::init_tesla(const std::string &addr) {
-    this->addr = addr;
-    
-    TESLA_MESSAGE init_msg;
-    init_msg.set_init(this->addr, this->hash_chain.back(), this->disclosure_time);
-    this->hash_chain.pop_back();
-    // make a function that opens another thread to perodically disclose messages (done in drone.cpp)
-    // make a function that opens another thread to perodically process MACs
+INIT_MESSAGE drone::TESLA::init_tesla(const std::string &addr) {
+        this->addr = addr;
+        
+        INIT_MESSAGE init_msg;
+        init_msg.set_tesla_init(this->addr, this->timed_hash_chain.back().hash, 
+                          std::chrono::duration_cast<std::chrono::seconds>(
+                              this->timed_hash_chain.back().disclosure_time.time_since_epoch()
+                          ).count());
 
-    return init_msg;
+        return init_msg;
+
 }
 
 void drone::TESLA::generateHashChain() {
@@ -72,11 +59,14 @@ void drone::TESLA::generateHashChain() {
     for (int i = 0; i < sizeof(buffer); ++i) {
         ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(buffer[i]);
     }
-    string hash = ss.str();
+    std::string hash = ss.str();
+    
+    auto now = std::chrono::system_clock::now();
+    
     for (int i = 0; i < numKeys; ++i) {
         hash = sha256(hash);
-        this->hash_chain.push_front(hash);
-        // cout << "Hash: " << hash << endl;
+        auto disclosure_time = now + this->disclosure_interval * i;
+        timed_hash_chain.push_front(TimedHash{disclosure_time, hash});
     }
 }
 
@@ -88,52 +78,12 @@ void drone::TESLA::compareHashes(const unsigned char *hash1, const unsigned char
     }
 }
 
-std::string drone::TESLA::hash_disclosure() {
-    if (this->hash_chain.empty()) {
-        cout << "No more keys to disclose" << endl;
-        return "ERR"; // temp
-    }
-    std::string hash = this->hash_chain.back();
-    this->hash_chain.pop_back();
-
-    return hash;
-}
-
-void drone::TESLA::recv(json& jsonData) {
-    TESLA_MESSAGE msg;
-    msg.deserialize(jsonData);
-
-    if (msg.mode == TESLA_MESSAGE::DISCLOSE) {
-        if (this->routingTable.find(msg.srcAddr) && this->routingTable[msg.srcAddr].has_mac) {
-            std::string mac = createHMAC(msg.hashKey, msg.data);
-            if (mac == msg.mac) {
-                cout << "MAC is valid" << endl;
-                // do whatever processing for RERRs
-                // remove that element from the queue
-            }
-        } else {
-            cout << "No need for this MAC" << endl;
+std::string drone::TESLA::getCurrentHash() {
+    auto now = std::chrono::system_clock::now();
+    for (const auto& timed_hash : this->timed_hash_chain) {
+        if (now >= timed_hash.disclosure_time) {
+            return timed_hash.hash;
         }
-        return; // what consequences for mac being too late or not existing?
-    } else if (msg.mode == TESLA_MESSAGE::DATA) { // <---- TODO: IMPLEMENT THIS PART AND THEN TEST
-        if (this->routingTable.find(msg.srcAddr)) {
-            auto now = std::chrono::steady_clock::now();
-            auto ttl = now + this->routingTable[msg.srcAddr].tesla_disclosure_time;
-            TESLA::msg m(msg.data, msg.mac, ttl);
-            this->mac_q.insert(m);
-        }
-    } else if (msg.mode == TESLA_MESSAGE::INIT) {
-        // Just updates routing table
-        auto now = std::chrono::steady_clock::now();
-        auto ttl = now + std::chrono::seconds(msg.disclosure_time);
-        this->routingTable[msg.srcAddr].setTeslaInfo(msg.hashKey, std::chrono::seconds(this->disclosure_time));
     }
-
-
-//     /*
-//     1) Recieve message [const std::string& addr, const std::string& MAC]
-//     2) Access drone routing table, where each entry has its own mac queue (This requires us to create a method in drone which allows routing table access)
-//     3) (How should we most quickly clean the queue?)
-//     4) 
-//     */
+    return ""; // No valid hash found
 }

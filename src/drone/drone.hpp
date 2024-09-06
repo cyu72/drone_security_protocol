@@ -54,17 +54,53 @@ class drone {
             public:
                 TESLA();
                 ~TESLA();
+                struct nonce_data {
+                    std::string nonce;
+                    std::string tesla_key;
+                    std::string auth;
+                    std::string destination;
+                };
 
                 RoutingMap<string, ROUTING_TABLE_ENTRY> routingTable;
                 const std::chrono::seconds disclosure_interval = std::chrono::seconds(std::stoul(std::getenv("TESLA_DISCLOSE")));
                 INIT_MESSAGE init_tesla(const string&);
                 string getCurrentHash();
 
+                void insert(const std::string& key, nonce_data value) {
+                    if (this->nonce_map.find(key) != this->nonce_map.end()) {
+                        std::cout << "Key '" << key << "' already exists. Updating value." << std::endl;
+                    }
+                    
+                    this->nonce_map[key] = value;
+                }
+
+                nonce_data getNonceData(const std::string& key) {
+
+                    if (nonce_map.find(key) != nonce_map.end()) {
+                        return nonce_map[key];
+                    } else {
+                        throw std::runtime_error("Key: " + key + " not found in nonce map");
+                    }
+                }
+
+                void printNonceMap() {
+                    for (const auto& entry : nonce_map) {
+                        std::cout << "Key: " << entry.first << std::endl;
+                        std::cout << "Nonce: " << entry.second.nonce << std::endl;
+                        std::cout << "TESLA Key: " << entry.second.tesla_key << std::endl;
+                        std::cout << "Auth: " << entry.second.auth << std::endl;
+                        std::cout << "Destination: " << entry.second.destination << std::endl;
+                        std::cout << std::endl;
+                    }
+                }
+
             private:
                 struct TimedHash {
                     std::chrono::system_clock::time_point disclosure_time;
                     std::string hash;
                 };
+
+                std::unordered_map<string, nonce_data> nonce_map; // If multiple nonce_datas are required, replace with vector
 
                 string addr;
                 const unsigned int key_lifetime = 10800; // Hardcoded: 10800 seconds
@@ -89,20 +125,22 @@ class drone {
         std::deque<string> hashChainCache; 
 
         void broadcast(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
-        void sendData(string containerName, const string& msg);
+        int sendData(string containerName, const string& msg);
         void sendDataUDP(const string&, const string&);
         string sha256(const string& inn);
         void initMessageHandler(json& data);
         void routeRequestHandler(json& data);
         void routeReplyHandler(json& data);
-        void routeErrorHandler(MESSAGE &msg);
+        void routeErrorHandler(json& data);
         void clientResponseThread(const string& msg);
         void initRouteDiscovery(const string&);
         void verifyRouteHandler(json& data);
+        void dataHandler(json& data);
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
 
-        const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT")));; // Maximum number of nodes we can/allow route through
+        const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
+        // const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
 
