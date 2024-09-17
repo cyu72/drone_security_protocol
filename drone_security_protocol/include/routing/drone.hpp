@@ -44,7 +44,6 @@ using std::string;
 
 class drone {
     public:
-        drone();
         drone(int port, int nodeID);
         void start();
         int send(const string&, const string&);

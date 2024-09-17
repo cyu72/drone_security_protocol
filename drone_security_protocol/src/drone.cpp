@@ -3,14 +3,6 @@
 std::chrono::high_resolution_clock::time_point globalStartTime;
 std::chrono::high_resolution_clock::time_point globalEndTime;
 
-drone::drone() : udpInterface(BRDCST_PORT), tcpInterface(PORT_NUMBER) {
-    cout << "Default drone constructor called" << endl;
-    this->addr = "";
-    this->port = -1;
-    this->nodeID = -1;
-    this->seqNum = 0;
-}
-
 drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     cout << "Drone constructor called" << endl;
     this->addr = "drone" + std::to_string(nodeID) + "-service.default";
@@ -477,6 +469,25 @@ void drone::neighborDiscoveryFunction(){
 }
 
 void drone::start() {
+    cout << "Starting drone." << endl;
+
+    /*Temp code to make all drones start at the same time
+    Waits until the nearest 30 seconds to start code*/
+    // auto now = std::chrono::system_clock::now();
+    // auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    // int currSecond = now_sec.time_since_epoch().count() % 60;
+    // int secsToWait = 0;
+
+    // if (currSecond > 30) {
+    //     secsToWait = 60 - currSecond + 30;
+    // } else {
+    //     secsToWait = 30 - currSecond;
+    // }
+
+    // cout << "Waiting for " << secsToWait << " seconds." << endl;
+    // sleep(secsToWait);
+    // Reminder to set up phase 1 and phase 2 to only allow tesla init messages in phase 1
+
     std::thread udpThread([this](){
         this->neighborDiscoveryFunction();
     });
@@ -506,34 +517,4 @@ void drone::start() {
             std::cerr << "Error accepting connection: " << e.what() << std::endl;
         }
     }
-}
-
-int main(int argc, char* argv[]) {
-    cout << "Starting drone." << endl;
-    const string param1 = std::getenv("PARAM1");
-    const char* param2 = std::getenv("PARAM2");
-    const char* param3 = std::getenv("PARAM3");
-    drone node(std::stoi(param2), std::stoi(param3)); // env vars for init
-    cout << "Drone object created." << endl;
-
-    node.start();
-
-    /*Temp code to make all drones start at the same time
-    Waits until the nearest 30 seconds to start code*/
-    // auto now = std::chrono::system_clock::now();
-    // auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    // int currSecond = now_sec.time_since_epoch().count() % 60;
-    // int secsToWait = 0;
-
-    // if (currSecond > 30) {
-    //     secsToWait = 60 - currSecond + 30;
-    // } else {
-    //     secsToWait = 30 - currSecond;
-    // }
-
-    // cout << "Waiting for " << secsToWait << " seconds." << endl;
-    // sleep(secsToWait);
-    // Reminder to set up phase 1 and phase 2 to only allow tesla init messages in phase 1
-
-    return 0;
 }

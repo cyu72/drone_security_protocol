@@ -12,22 +12,27 @@ RUN apk add --no-cache \
     git \
     openssl-dev \
     python3 \
-    py3-pip 
+    python3-dev \
+    py3-pip && \
+    python3 -m venv /app/venv && \
+    . /app/venv/bin/activate && \
+    pip3 install --no-cache-dir Cython flask setuptools numpy requests
 
-RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
-RUN pip3 install flask
+COPY drone_security_protocol/CMakeLists.txt /app/drone_security_protocol/
+COPY drone_security_protocol/include /app/drone_security_protocol/include
+COPY drone_security_protocol/src /app/drone_security_protocol/src
 
-# Copy the entire project structure
-COPY drone_security_protocol /app/drone_security_protocol
-
-# Set the working directory to the project root
 WORKDIR /app/drone_security_protocol
 
-# Create build directory and run CMake
 RUN mkdir build && cd build && cmake .. && make
+
+COPY drone_security_protocol /app/drone_security_protocol
+
+RUN cd RRT-search && python3 setup.py build_ext --inplace
 
 EXPOSE 65456
 
-CMD ["python3", "initScript.py"]
+WORKDIR /app/drone_security_protocol/RRT-search
+CMD ["python3", "rrt.py"]

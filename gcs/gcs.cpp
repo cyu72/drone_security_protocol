@@ -135,7 +135,7 @@ void initializeServer() {
     cout << "GCS Server running on port " << PORT_NUMBER << endl;
 
     while (true) {
-        cout << "1) Initiate Route Discovery\n2) Verify Routes\n3) Delete Routes\n4) Send UDP Message\n5) Send auto-routed message\n6) Send to IP\n7) Exit " << endl;
+        cout << "1) Initiate Route Discovery\n2) Print Route\n3) Send UDP Message\n4) Send auto-routed message\n5) Send to IP\n6) Exit " << endl;
         cout << "> ";
         
         string input;
@@ -201,15 +201,6 @@ void initializeServer() {
                     cout << "No input received. Returning to main menu." << endl;
                     continue;
                 }
-                // Add deletion functionality here.
-                break;
-            case 4:
-                cout << "Enter drone ID [number]: ";
-                std::getline(std::cin, input);
-                if (input.empty()) {
-                    cout << "No input received. Returning to main menu." << endl;
-                    continue;
-                }
                 containerName = "drone" + input + "-service.default";
                 cout << "Enter UDP message: ";
                 std::getline(std::cin, jsonStr);
@@ -219,7 +210,7 @@ void initializeServer() {
                 }
                 sendDataUDP(containerName, jsonStr);
                 break;
-            case 5:
+            case 4:
                 cout << "Enter drone ID [number]: ";
                 std::getline(std::cin, input);
                 if (input.empty()) {
@@ -238,7 +229,7 @@ void initializeServer() {
                 jsonStr = msg.serialize();
                 sendData(containerName, jsonStr);
                 break;
-            case 6:
+            case 5:
                 cout << "Enter IP address: ";
                 std::getline(std::cin, destAddr);
                 if (destAddr.empty()) {
@@ -253,7 +244,7 @@ void initializeServer() {
                 }
                 sendData(destAddr, jsonStr);
                 break;
-            case 7:
+            case 6:
                 return;
             default:
                 cout << "Invalid option. Please try again." << endl;

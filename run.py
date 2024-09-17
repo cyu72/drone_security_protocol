@@ -1,15 +1,20 @@
 import time, sys, random
+import math
 import argparse
 import subprocess
 import subprocess
 import threading
+import requests
 
+from flask import Flask, request, jsonify
 from kubernetes import client, config
 from tabulate import tabulate
 import colorama
 from colorama import Fore, Back, Style
 
+app = Flask(__name__)
 colorama.init(autoreset=True)
+matrix = []
 
 parser = argparse.ArgumentParser(description='TBD')
 parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
@@ -17,10 +22,14 @@ parser.add_argument('--startup', action='store_true', help='Complete initial sta
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
 # parser.add_argument('--timeout_sec', type=int, default=3, help='Timeout for TCP data connections')
+parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
 args = parser.parse_args()
 
 droneNum = args.drone_count
-droneImage = "cyu72/drone:latest"
+if args.stable:
+  droneImage = "cyu72/drone:stable"
+else:
+  droneImage = "cyu72/drone:latest"
 gcsImage = "cyu72/gcs:latest"
 
 if args.startup:
@@ -47,9 +56,11 @@ spec:
   containers: 
     - name: drone{num}
       image: {droneImage}
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone{num}"
+          value: "{num}"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -74,6 +85,7 @@ kind: Service
 metadata:
   name: drone{num}-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone{num}
@@ -245,6 +257,67 @@ def run_command(command):
 
 threads = []
 
+def partition_grid(matrix, num_leaders):
+    n = len(matrix)
+    partitions = []
+    
+    # Calculate the number of rows and columns for partitioning
+    num_rows = int(math.sqrt(num_leaders))
+    num_cols = math.ceil(num_leaders / num_rows)
+    
+    # Calculate the size of each partition
+    row_size = n // num_rows
+    col_size = n // num_cols
+    
+    for i in range(num_rows):
+        for j in range(num_cols):
+            if len(partitions) < num_leaders:
+                start_row = i * row_size
+                end_row = min((i + 1) * row_size, n) - 1
+                start_col = j * col_size
+                end_col = min((j + 1) * col_size, n) - 1
+                
+                # Adjust end_row and end_col for the last row and column
+                if i == num_rows - 1:
+                    end_row = n - 1  # Ensure the last row is included
+                if j == num_cols - 1:
+                    end_col = n - 1  # Ensure the last column is included
+                
+                partition = {
+                    "start_row": start_row,
+                    "end_row": end_row,
+                    "start_col": start_col,
+                    "end_col": end_col,
+                    "drones": []
+                }
+                
+                for x in range(start_row, end_row + 1):  # Include end_row in the range
+                    for y in range(start_col, end_col + 1):  # Include end_col in the range
+                        if matrix[x][y] != 0:
+                            partition["drones"].append((matrix[x][y], x, y))
+                
+                partitions.append(partition)
+    
+    return partitions
+
+def select_leader_drones(matrix, num_leaders):
+    drones = [(matrix[i][j], i, j) for i in range(len(matrix)) for j in range(len(matrix[i])) if matrix[i][j] != 0]
+    return random.sample(drones, min(num_leaders, len(drones)))
+
+def send_drone_info(drone_number, is_leader, partition=None):
+    nodePort = 30000 + drone_number
+    url = f"http://127.0.0.1:{nodePort}/"  # Note: We're now sending to the root URL
+    data = {
+        "is_leader": is_leader,
+        "partition": partition if is_leader else None
+    }
+    try:
+        response = requests.post(url, json=data)
+        response.raise_for_status()
+        print(f"Sent {'leader' if is_leader else 'follower'} info to Drone {drone_number}")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to send info to Drone {drone_number}: {e}")
+
 while True:
     config.load_kube_config()
     api_instance = client.CoreV1Api()
@@ -278,18 +351,39 @@ while True:
 
         # Send a request to each service
         time.sleep(5)
+        num_leaders = 3  # You can adjust this number as needed
+        leader_drones = select_leader_drones(matrix, num_leaders)
+        partitions = partition_grid(matrix, num_leaders)
+
         for service in services.items:
             if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
-                drone_number = service.metadata.name.split("drone")[1].split("-")[0]
-                nodePort = 30000 + int(drone_number)
+                drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
+                nodePort = 30000 + drone_number
                 print(f"Service: {service.metadata.name}")
 
                 for ingress in service.status.load_balancer.ingress:
                     url = f"http://127.0.0.1:{nodePort}"
                     print(f"Sending request to {url}")
 
-                    process = subprocess.Popen(f"curl {url}", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    print(process.stdout.read().decode())
+                    is_leader = any(drone[0] == drone_number for drone in leader_drones)
+                    data = {"is_leader": is_leader}
+
+                    if is_leader:
+                        leader_index = next(i for i, drone in enumerate(leader_drones) if drone[0] == drone_number)
+                        partition = partitions[leader_index]
+                        data["partition"] = {
+                            "start_row": partition["start_row"],
+                            "end_row": partition["end_row"],
+                            "start_col": partition["start_col"],
+                            "end_col": partition["end_col"]
+                        }
+
+                    try:
+                        response = requests.post(url, json=data)
+                        response.raise_for_status()
+                        print(f"Sent {'leader' if is_leader else 'follower'} info to Drone {drone_number}")
+                    except requests.exceptions.RequestException as e:
+                        print(f"Failed to send info to Drone {drone_number}: {e}")
         for process in processes:
             process.terminate()
         break
@@ -315,7 +409,6 @@ def print_matrix(matrix):
     # Print the table
     print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
     print(f"\n{Fore.CYAN}Legend: {Fore.GREEN}{Back.LIGHTWHITE_EX} Drone {Style.RESET_ALL} | {Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
-
 
 def get_neighbors(matrix, i, j):
     neighbors = []
@@ -369,11 +462,56 @@ def move_drone(matrix, drone, to_pos):
                 return matrix
     raise ValueError(f"Drone {drone} not found in the matrix")
 
+@app.route('/coords', methods=['GET'])
+def get_coords():
+    return jsonify({"matrix": matrix}), 200
+
+@app.route('/update_coords', methods=['POST'])
+def update_coords():
+    global matrix
+    message = request.json
+    try:
+        drone = int(message['drone-id'])
+        to_i = int(float(message['x']))
+        to_j = int(float(message['y']))
+        
+        if to_i < 0 or to_i >= len(matrix) or to_j < 0 or to_j >= len(matrix[0]):
+            return jsonify({"error": f"Position ({to_i}, {to_j}) is out of bounds"}), 400
+        
+        if matrix[to_i][to_j] != 0:
+            return jsonify({"error": f"Position ({to_i}, {to_j}) is not empty"}), 400
+        
+        matrix = move_drone(matrix, drone, (to_i, to_j))
+        update_network_policies(matrix)
+        print(f"Drone {drone} moved to position ({to_i}, {to_j})")
+        print("Matrix updated and network policies updated.")
+        print_matrix(matrix)  # Update the terminal display
+        return jsonify({"message": "Coordinates updated successfully", "new_matrix": matrix}), 200
+    except KeyError as e:
+        return jsonify({"error": f"Invalid request format. Missing key: {str(e)}"}), 400
+    except ValueError as e:
+        return jsonify({"error": f"Invalid value: {str(e)}. Please provide valid integer values."}), 400
+    except IndexError:
+        return jsonify({"error": "Invalid position. Please ensure all indices are within the matrix bounds."}), 400
+    except Exception as e:
+        return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
+def run_flask_server():
+    app.run(host='0.0.0.0', port=8080)
+
+flask_thread = threading.Thread(target=run_flask_server)
+flask_thread.start()
+
 while True:
     print_matrix(matrix)
     user_input = input("Enter move (drone_number to_i to_j) or 'q' to quit: ")
     
     if user_input.lower() == 'q':
+        func = request.environ.get('werkzeug.server.shutdown')
+        if func is None:
+            raise RuntimeError('Not running with the Werkzeug Server')
+        func()
+        flask_thread.join()
         break
     
     try:

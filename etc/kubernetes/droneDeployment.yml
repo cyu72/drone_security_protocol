@@ -11,9 +11,11 @@ spec:
   containers: 
     - name: drone1
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone1"
+          value: "1"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -38,6 +40,7 @@ kind: Service
 metadata:
   name: drone1-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone1
@@ -70,9 +73,11 @@ spec:
   containers: 
     - name: drone2
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone2"
+          value: "2"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -97,6 +102,7 @@ kind: Service
 metadata:
   name: drone2-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone2
@@ -129,9 +135,11 @@ spec:
   containers: 
     - name: drone3
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone3"
+          value: "3"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -156,6 +164,7 @@ kind: Service
 metadata:
   name: drone3-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone3
@@ -188,9 +197,11 @@ spec:
   containers: 
     - name: drone4
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone4"
+          value: "4"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -215,6 +226,7 @@ kind: Service
 metadata:
   name: drone4-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone4
@@ -247,9 +259,11 @@ spec:
   containers: 
     - name: drone5
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone5"
+          value: "5"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -274,6 +288,7 @@ kind: Service
 metadata:
   name: drone5-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone5
@@ -306,9 +321,11 @@ spec:
   containers: 
     - name: drone6
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone6"
+          value: "6"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -333,6 +350,7 @@ kind: Service
 metadata:
   name: drone6-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone6
@@ -365,9 +383,11 @@ spec:
   containers: 
     - name: drone7
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone7"
+          value: "7"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -392,6 +412,7 @@ kind: Service
 metadata:
   name: drone7-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone7
@@ -424,9 +445,11 @@ spec:
   containers: 
     - name: drone8
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone8"
+          value: "8"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -451,6 +474,7 @@ kind: Service
 metadata:
   name: drone8-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone8
@@ -483,9 +507,11 @@ spec:
   containers: 
     - name: drone9
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone9"
+          value: "9"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -510,6 +536,7 @@ kind: Service
 metadata:
   name: drone9-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone9
@@ -542,9 +569,11 @@ spec:
   containers: 
     - name: drone10
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone10"
+          value: "10"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -569,6 +598,7 @@ kind: Service
 metadata:
   name: drone10-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone10
@@ -601,9 +631,11 @@ spec:
   containers: 
     - name: drone11
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone11"
+          value: "11"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -628,6 +660,7 @@ kind: Service
 metadata:
   name: drone11-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone11
@@ -660,9 +693,11 @@ spec:
   containers: 
     - name: drone12
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone12"
+          value: "12"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -687,6 +722,7 @@ kind: Service
 metadata:
   name: drone12-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone12
@@ -719,9 +755,11 @@ spec:
   containers: 
     - name: drone13
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone13"
+          value: "13"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -746,6 +784,7 @@ kind: Service
 metadata:
   name: drone13-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone13
@@ -778,9 +817,11 @@ spec:
   containers: 
     - name: drone14
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone14"
+          value: "14"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -805,6 +846,7 @@ kind: Service
 metadata:
   name: drone14-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone14
@@ -837,9 +879,11 @@ spec:
   containers: 
     - name: drone15
       image: cyu72/drone:latest
+      stdin: true
+      tty: true
       env:
         - name: PARAM1
-          value: "drone15"
+          value: "15"
         - name: PARAM2
           value: "65456"
         - name: PARAM3
@@ -864,6 +908,7 @@ kind: Service
 metadata:
   name: drone15-service
 spec:
+  externalTrafficPolicy: Local
   type: LoadBalancer
   selector:
     app: drone15

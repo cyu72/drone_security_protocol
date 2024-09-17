@@ -4,7 +4,6 @@ project(drone)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-
 file(GLOB_RECURSE SOURCES "src/*.cpp")
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
@@ -21,10 +20,9 @@ FetchContent_MakeAvailable(nlohmann_json)
 find_package(OpenSSL REQUIRED)
 
 enable_testing()
-add_executable(
-    drone
-    ${SOURCES}
-)
+add_library(drone SHARED ${SOURCES})
+target_include_directories(drone PUBLIC ${PROJECT_SOURCE_DIR}/include)
+
 target_link_libraries(
     drone
     PRIVATE
