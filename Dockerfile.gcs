@@ -2,14 +2,17 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add g++ bind-tools make cmake git
+# RUN apk add g++ bind-tools make cmake git
+RUN apk add --no-cache \
+    python3 \
+    python3-dev
 
-COPY gcs/*.cpp gcs/*.hpp gcs/CMakeLists.txt /app/
+COPY gcs/ /app/
 
-RUN cmake .
+# RUN cmake .
 
-RUN make
+# RUN make
 
 EXPOSE 65456
 
-CMD ["./gcs"]
+CMD ["python3", "main.py"]
