@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <tuple>
 #include <thread>
 #include <set>
@@ -32,6 +33,7 @@
 #include <ctime>
 #include "hashTree.hpp"
 #include "messages.hpp"
+#include "ipcServer.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "network_adapters/kube_udp_interface.hpp"
@@ -47,6 +49,7 @@ class drone {
         drone(int port, int nodeID);
         void start();
         int send(const string&, const string&);
+        void broadcast(const string& msg);
 
     private:
         class TESLA {
@@ -123,7 +126,6 @@ class drone {
         int nodeID;
         std::deque<string> hashChainCache; 
 
-        void broadcast(const string& msg); // This function will be replaced with just sending data through the broadcast address outside simulation
         int sendData(string containerName, const string& msg);
         void sendDataUDP(const string&, const string&);
         string sha256(const string& inn);
@@ -142,6 +144,7 @@ class drone {
         // const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
+        IPCServer* ipcServer = nullptr;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message

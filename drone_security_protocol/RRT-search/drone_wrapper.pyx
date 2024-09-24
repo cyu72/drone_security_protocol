@@ -10,6 +10,7 @@ cdef extern from "/app/drone_security_protocol/include/routing/drone.hpp":
         drone(int port, int nodeID) except +
         void start()
         int send(const string&, const string&)
+        void broadcast(const string&)
 
 cdef class DroneRouting:
     cdef drone* c_drone
@@ -25,5 +26,8 @@ cdef class DroneRouting:
 
     def send(self, str destination, str message):
         return self.c_drone.send(destination.encode('utf-8'), message.encode('utf-8'))
+
+    def broadcast(self, str message):
+        self.c_drone.broadcast(message.encode('utf-8'))  # Add this method
 
 # Additional wrapper functions for other methods can be added here as needed

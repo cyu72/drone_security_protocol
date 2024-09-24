@@ -411,17 +411,20 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
 };
 
 struct DATA_MESSAGE : public MESSAGE {
+    bool isBroadcast;
     string destAddr;
     string srcAddr;
     string data;
 
     DATA_MESSAGE() {
+        isBroadcast = false;
         this->type = DATA;
         this->destAddr = "";
         this->data = "";
     }
 
-    DATA_MESSAGE(string destAddr, string srcAddr, string data) {
+    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false) {
+        this->isBroadcast = isBroadcast;
         this->type = DATA;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -431,6 +434,7 @@ struct DATA_MESSAGE : public MESSAGE {
     string serialize() const override {
         json j = json{
             {"type", this->type},
+            {"isBroadcast", this->isBroadcast},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
             {"data", this->data}
@@ -440,6 +444,7 @@ struct DATA_MESSAGE : public MESSAGE {
 
     void deserialize(json& j) override {
         this->type = j["type"];
+        this->isBroadcast = j["isBroadcast"];
         this->destAddr = j["destAddr"];
         this->srcAddr = j["srcAddr"];
         this->data = j["data"];

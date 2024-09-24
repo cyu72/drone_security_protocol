@@ -69,9 +69,15 @@ void drone::dataHandler(json& data){
     DATA_MESSAGE msg;
     msg.deserialize(data);
 
-    if (msg.destAddr == this->addr) {
-        cout << "Data received: " << msg.data << endl;
-        return;
+    if (msg.isBroadcast || (msg.destAddr == this->addr)) {
+        cout << "Data received in C++ dataHandler: " << msg.data << endl;
+        if (this->ipcServer) {
+            cout << "Attempting to send data via IPC" << endl;
+            this->ipcServer->sendData(msg.data);
+            cout << "Data sent via IPC" << endl;
+        } else {
+            cout << "IPC Server not initialized" << endl;
+        }
     } else {
         cout << "Forwarding data to next hop." << endl;
         if (this->tesla.routingTable.find(msg.destAddr)) {
@@ -91,6 +97,11 @@ void drone::dataHandler(json& data){
             // we also send a route error?
         }
     }
+}
+
+void drone::broadcast(const std::string& msg) {
+    DATA_MESSAGE data("BRDCST", this->addr, msg, true);
+    this->udpInterface.broadcast(data.serialize());
 }
 
 int drone::send(const string& destAddr, const string& msg){
@@ -493,6 +504,7 @@ void drone::start() {
     });
 
     cout << "Entering server loop " << endl;
+    this->ipcServer = new IPCServer(60137);
     while (true) {
         try {
             int clientSock = this->tcpInterface.accept_connection();
@@ -514,7 +526,9 @@ void drone::start() {
                 close(clientSock);
             }).detach();
         } catch (const std::exception& e) {
-            std::cerr << "Error accepting connection: " << e.what() << std::endl;
+            std::cerr << "Error accepting TCP connection: " << e.what() << std::endl;
         }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
