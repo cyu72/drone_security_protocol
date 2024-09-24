@@ -35,4 +35,4 @@ RUN cd RRT-search && python3 setup.py build_ext --inplace
 EXPOSE 65456
 
 WORKDIR /app/drone_security_protocol/RRT-search
-CMD ["python3", "rrt.py"]
+CMD ["python3", "main.py"]

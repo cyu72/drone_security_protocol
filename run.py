@@ -17,12 +17,12 @@ colorama.init(autoreset=True)
 matrix = []
 
 parser = argparse.ArgumentParser(description='TBD')
-parser.add_argument('--drone_count', type=int, default=9, help='Specify number of drones in simulation')
+parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
 parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
-parser.add_argument('--grid_size', type=int, default=15, help='Defines nxn sized grid.')
+parser.add_argument('--grid_size', type=int, default=8, help='Defines nxn sized grid.')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
