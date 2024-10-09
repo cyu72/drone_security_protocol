@@ -31,6 +31,8 @@
 #include <chrono>
 #include <sys/time.h>
 #include <ctime>
+#include <atomic>
+#include <condition_variable>
 #include "hashTree.hpp"
 #include "messages.hpp"
 #include "ipcServer.hpp"
@@ -124,6 +126,12 @@ class drone {
         int port;
         unsigned long seqNum;
         int nodeID;
+        std::queue<string> messageQueue;
+        std::mutex queueMutex;
+        std::condition_variable cv;
+        std::atomic<bool> running{true};
+
+
         std::deque<string> hashChainCache; 
 
         int sendData(string containerName, const string& msg);
@@ -133,7 +141,7 @@ class drone {
         void routeRequestHandler(json& data);
         void routeReplyHandler(json& data);
         void routeErrorHandler(json& data);
-        void clientResponseThread(const string& msg);
+        void clientResponseThread();
         void initRouteDiscovery(const string&);
         void verifyRouteHandler(json& data);
         void dataHandler(json& data);

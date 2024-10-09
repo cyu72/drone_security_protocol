@@ -11,56 +11,76 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->seqNum = 0;
 }
 
-void drone::clientResponseThread(const string& buffer){
+void drone::clientResponseThread(){
     /* function to handle all incoming messages from the client
     check what type of message it is; launch the function to handle whatever type it is */
-    json jsonData = json::parse(buffer);
+    
+    while (running) {
+        json jsonData;
 
-    switch(jsonData["type"].get<int>()){
-        case ROUTE_REQUEST:
-            cout << "RREQ received." << endl;
-            routeRequestHandler(jsonData);
-            break;
-        case ROUTE_REPLY:
-            cout << "RREP received." << endl;
-            routeReplyHandler(jsonData);
-            break;
-        case ROUTE_ERROR:
-            cout << "RERR Handler Called" << endl;
-            routeErrorHandler(jsonData);
-            break;
-        case DATA:
-            cout << "Data message received." << endl;
-            dataHandler(jsonData);
-            break;
-        case INIT_AUTO_DISCOVERY:
         {
-            cout << "Initiating auto discovery." << endl;
-            GCS_MESSAGE ctl; ctl.deserialize(jsonData);
-            DATA_MESSAGE data; data.data = "Hello from drone " + std::to_string(this->nodeID); data.destAddr = ctl.destAddr; data.srcAddr = this->addr;
-            send(ctl.destAddr, data.serialize());
-            break;
+            std::unique_lock<std::mutex> lock(queueMutex);
+            cv.wait(lock, [this] { return !messageQueue.empty() || !running; });
+            
+            if (!running && messageQueue.empty()) {
+                break;
+            }
+            
+            if (!messageQueue.empty()) {
+                jsonData = json::parse(messageQueue.front());
+                messageQueue.pop();
+            } else {
+                continue;
+            }
         }
-        case INIT_ROUTE_DISCOVERY:
-        {
-            cout << "Initiating route discovery." << endl;
-            GCS_MESSAGE ctl;
-            ctl.deserialize(jsonData);
-            initRouteDiscovery(ctl.destAddr);
-            break;
-        }
-        case EXIT:
-            std::exit(0); // temp, need to resolve mem leaks before actually closing
-            break;
-        case VERIFY_ROUTE:
-            verifyRouteHandler(jsonData);
-            break;
-        case HELLO:
-            initMessageHandler(jsonData);
-            break;
-        default:
-            cout << "Message type not recognized." << endl; 
-            break;
+
+            std::cout << "Processing message: " << jsonData << std::endl;
+            switch(jsonData["type"].get<int>()){
+                case ROUTE_REQUEST:
+                    cout << "RREQ received." << endl;
+                    routeRequestHandler(jsonData);
+                    break;
+                case ROUTE_REPLY:
+                    cout << "RREP received." << endl;
+                    routeReplyHandler(jsonData);
+                    break;
+                case ROUTE_ERROR:
+                    cout << "RERR Handler Called" << endl;
+                    routeErrorHandler(jsonData);
+                    break;
+                case DATA:
+                    cout << "Data message received." << endl;
+                    dataHandler(jsonData);
+                    break;
+                case INIT_AUTO_DISCOVERY:
+                {
+                    cout << "Initiating auto discovery." << endl;
+                    GCS_MESSAGE ctl; ctl.deserialize(jsonData);
+                    DATA_MESSAGE data; data.data = "Hello from drone " + std::to_string(this->nodeID); data.destAddr = ctl.destAddr; data.srcAddr = this->addr;
+                    send(ctl.destAddr, data.serialize());
+                    break;
+                }
+                case INIT_ROUTE_DISCOVERY:
+                {
+                    cout << "Initiating route discovery." << endl;
+                    GCS_MESSAGE ctl;
+                    ctl.deserialize(jsonData);
+                    initRouteDiscovery(ctl.destAddr);
+                    break;
+                }
+                case EXIT:
+                    std::exit(0); // temp, need to resolve mem leaks before actually closing
+                    break;
+                case VERIFY_ROUTE:
+                    verifyRouteHandler(jsonData);
+                    break;
+                case HELLO:
+                    initMessageHandler(jsonData);
+                    break;
+                default:
+                    cout << "Message type not recognized." << endl; 
+                    break;
+            }
     }
 }
 
@@ -471,7 +491,13 @@ void drone::neighborDiscoveryFunction(){
 
             // std::cout << "Received UDP message: " << receivedMsg << std::endl;
             // std::cout << "From: " << client_ip << ":" << client_port << std::endl;
-            this->clientResponseThread(receivedMsg);
+            // this->clientResponseThread(receivedMsg);
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                this->messageQueue.push(receivedMsg);
+                std::cout << "Received message: " << receivedMsg << std::endl;
+            }
+            cv.notify_one();
         } catch (const std::exception& e) {
             std::cerr << "Error in neighborDiscoveryFunction: " << e.what() << std::endl;
             break;
@@ -503,6 +529,10 @@ void drone::start() {
         this->neighborDiscoveryFunction();
     });
 
+    std::thread processThread([this](){
+        this->clientResponseThread();
+    });
+
     cout << "Entering server loop " << endl;
     this->ipcServer = new IPCServer(60137);
     while (true) {
@@ -519,7 +549,12 @@ void drone::start() {
                     cout << std::ctime(&timestamp);
                     cout << msg << endl;
 
-                    this->clientResponseThread(msg);
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    this->messageQueue.push(msg);
+                    std::cout << "Received message: " << msg << std::endl;
+                }
+                cv.notify_one();
                 } catch (const std::exception& e) {
                     std::cerr << "Error handling client: " << e.what() << std::endl;
                 }
