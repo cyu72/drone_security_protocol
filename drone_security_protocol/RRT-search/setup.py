@@ -6,9 +6,6 @@ ext_modules = [
         "drone_wrapper",
         sources=[
             "/app/drone_security_protocol/RRT-search/drone_wrapper.pyx",
-            # "/app/drone_security_protocol/src/drone.cpp",
-            # "/app/drone_security_protocol/src/hashTree.cpp",
-            # "/app/drone_security_protocol/src/tesla.cpp"
         ],
         include_dirs=[
             "/app/drone_security_protocol/include",
