@@ -34,7 +34,6 @@ void drone::clientResponseThread(){
             }
         }
 
-            std::cout << "Processing message: " << jsonData << std::endl;
             switch(jsonData["type"].get<int>()){
                 case ROUTE_REQUEST:
                     cout << "RREQ received." << endl;
@@ -90,11 +89,8 @@ void drone::dataHandler(json& data){
     msg.deserialize(data);
 
     if (msg.isBroadcast || (msg.destAddr == this->addr)) {
-        cout << "Data received in C++ dataHandler: " << msg.data << endl;
         if (this->ipcServer) {
-            cout << "Attempting to send data via IPC" << endl;
             this->ipcServer->sendData(msg.data);
-            cout << "Data sent via IPC" << endl;
         } else {
             cout << "IPC Server not initialized" << endl;
         }
@@ -120,24 +116,17 @@ void drone::dataHandler(json& data){
 
 void drone::broadcast(const std::string& msg) {
     DATA_MESSAGE data("BRDCST", this->addr, msg, true);
-    std::cout << "C++ broadcast: drone object at " << std::hex << std::showbase << reinterpret_cast<uintptr_t>(this) << std::dec << std::endl;
     cout << "Printing routing table." << endl;
     this->tesla.routingTable.print();
     this->udpInterface.broadcast(data.serialize());
 }
 
-int drone::send(const string& destAddr, string msg, bool isExternal){
+int drone::send(const string& destAddr, string msg, bool isExternal){ 
     /*Checks if entry in routing table; else initiates route discovery*/
-    std::cout << "C++ send: drone object at " << std::hex << std::showbase << reinterpret_cast<uintptr_t>(this) << std::dec << std::endl;
     if (isExternal){
-        DATA_MESSAGE data; data.destAddr = "drone10-service.default"; data.srcAddr = this->addr;
-        // data.data = std::move(msg);
-        data.data = "";
+        DATA_MESSAGE data; data.destAddr = destAddr; data.srcAddr = this->addr; data.data = std::move(msg);
         msg = data.serialize();
     }
-
-    cout << "Printing routing table." << endl;
-    this->tesla.routingTable.print();
 
     if (!this->tesla.routingTable.find(destAddr)) {
         cout << "Route not found, initiating route discovery." << endl;
@@ -237,7 +226,6 @@ void drone::initRouteDiscovery(const string& destAddr){
 
 void drone::initMessageHandler(json& data){
     /*Creates a routing table entry for each authenticator & tesla msg received*/
-    cout << "C++ initMessageHandler: this = " << this << endl;
     {
         std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
         if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) return;
@@ -374,7 +362,6 @@ void drone::routeReplyHandler(json& data){
     if (hashRes != this->tesla.routingTable[msg.recvAddr].hash){ // code is expanded for debugging purposes
         cout << "Calculated Hash " << hashRes << endl;
         cout << "Incorrect hash, dropping RREP." << endl;
-        this->tesla.routingTable.print();
         return;
     } else if (msg.srcSeqNum < this->tesla.routingTable[msg.recvAddr].seqNum){
         cout << "Smaller seqNum, dropping RREP." << endl;

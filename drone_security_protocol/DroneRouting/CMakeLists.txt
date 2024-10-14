@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
-project(drone)
+project(drone_routing)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-file(GLOB_RECURSE SOURCES "src/*.cpp")
+file(GLOB_RECURSE LIB_SOURCES "src/*.cpp")
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include(FetchContent)
@@ -19,14 +19,16 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenSSL REQUIRED)
 
-enable_testing()
-add_library(drone SHARED ${SOURCES})
-target_include_directories(drone PUBLIC ${PROJECT_SOURCE_DIR}/include)
+# DroneRouting Library
+add_library(DroneRouting SHARED ${LIB_SOURCES})
+target_include_directories(DroneRouting PUBLIC ${PROJECT_SOURCE_DIR}/include)
 
 target_link_libraries(
-    drone
+    DroneRouting
     PRIVATE
     nlohmann_json::nlohmann_json
-    ssl
-    crypto
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
+
+set_target_properties(DroneRouting PROPERTIES OUTPUT_NAME "drone_routing")
