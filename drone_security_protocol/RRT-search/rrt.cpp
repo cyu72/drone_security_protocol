@@ -70,7 +70,6 @@ void RRT::recv_data() {
     int port = 60137;
     int server_socket;
     int client_socket;
-    char buffer[1024] = {0};
     const char* host = "127.0.0.1";
     struct sockaddr_in address;
     int addrlen = sizeof(address);
@@ -108,22 +107,33 @@ void RRT::recv_data() {
 
         std::cout << "New connection accepted" << std::endl;
 
-        // Receive and print messages
+        // Receive and process messages
+        std::string message;
+        char buffer[1024];
+        ssize_t bytes_received;
+
         while(true) {
-            int valread = read(client_socket, buffer, 1024);
-            if (valread <= 0) {
-                if (valread == 0) {
+            bytes_received = recv(client_socket, buffer, sizeof(buffer), 0);
+            if (bytes_received <= 0) {
+                if (bytes_received == 0) {
                     std::cout << "Client disconnected" << std::endl;
                 } else {
-                    perror("read");
+                    perror("recv");
                 }
                 close(client_socket);
                 break;
             }
-            
-            std::cout << "Received: " << std::string(buffer, valread) << std::endl;
-            this->message_queue.push(std::string(buffer, valread));
-            memset(buffer, 0, sizeof(buffer));
+
+            for (ssize_t i = 0; i < bytes_received; ++i) {
+                if (buffer[i] == '\n') {
+                    // End of message, process it
+                    std::cout << "Received: " << message << std::endl;
+                    this->message_queue.push(message);
+                    message.clear();
+                } else {
+                    message += buffer[i];
+                }
+            }
         }
     }
 
@@ -146,52 +156,113 @@ void RRT::process_messages() {
 
             } else if (json["message_type"] == MessageType::FOLLOWER_DATA) {
                 std::cout << "Received follower data" << std::endl;
-                this->followers.push_back(json["follower_id"]);
+                this->followers.insert({json["follower_id"].get<std::string>(), true});
 
             } else if (json["message_type"] == MessageType::LOCATION_UPDATE) {
-                std::cout << "Received location update" << std::endl;
-                // this->x = json["x"];
-                // this->y = json["y"];
+                std::cout << "Location update received" << std::endl;
+
+                if (this->type == LEADER) {
+                    int drone_id = json["drone-id"].get<int>();
+                    std::string drone_name = "drone" + std::to_string(drone_id) + "-service.default";
+                    
+                    if (this->followers.find(drone_name) != this->followers.end()) {
+                        this->followers[drone_name] = true;
+                        for (auto& row : this->grid) {
+                            for (auto& cell : row) {
+                                if (cell == drone_id) {
+                                    cell = 0;
+                                }
+                            }
+                        }
+                        this->grid[json["x"].get<int>()][json["y"].get<int>()] = drone_id;
+                        
+                        std::cout << "Updated grid:" << std::endl;
+                        for (const auto& row : this->grid) {
+                            for (const auto& cell : row) {
+                                std::cout << cell << " ";
+                            }
+                            std::cout << std::endl;
+                        }
+                    }
+                } else {
+                    if (json["leader-id"] == this->leader_id) {
+                        nlohmann::json socket_data;
+                        socket_data["message_type"] = MessageType::LOCATION_UPDATE;
+                        socket_data["drone-id"] = std::atoi(std::getenv("PARAM1"));
+                        socket_data["x"] = this->x;
+                        socket_data["y"] = this->y;
+                        this->droneRouting.send(this->leader_id, socket_data.dump(), true);
+                    }
+                }
 
             } else if (json["message_type"] == MessageType::TASK_ASSIGNMENT) {
                 std::cout << "Received task assignment" << std::endl;
             }
         } catch (const std::exception& e) {
             std::cerr << "Error processing message: " << e.what() << std::endl;
+            // Print the raw message for debugging
+            std::cerr << "Raw message: " << msg << std::endl;
         }
     }
 }
 
-void RRT::modify_coords(int x, int y) { // Need to test
+void RRT::modify_coords(int x, int y) {
     nlohmann::json socket_data;
-    socket_data["drone_id"] = this->drone_id;
+    socket_data["drone-id"] = std::atoi(std::getenv("PARAM1"));
     socket_data["x"] = x;
     socket_data["y"] = y;
 
     try {
-        cpr::Response response = cpr::Post(
-            cpr::Url{this->controller_addr + "/update_coords"},
-            cpr::Body{socket_data.dump()},
-            cpr::Header{{"Content-Type", "application/json"}}
-        );
-
-        if (response.status_code == 200) {
-            cout << nlohmann::json::parse(response.text) << endl;
-        } else {
-            std::cerr << "Error: Received status code " << response.status_code << std::endl;
+        // Parse the controller address to get host and port
+        std::string host = this->controller_addr;
+        std::string path = "/update_coords";
+        if (host.substr(0, 7) == "http://") {
+            host = host.substr(7);
+        } else if (host.substr(0, 8) == "https://") {
+            host = host.substr(8);
         }
+
+        size_t colonPos = host.find(':');
+        int port = 80; // Default HTTP port
+        if (colonPos != std::string::npos) {
+            port = std::stoi(host.substr(colonPos + 1));
+            host = host.substr(0, colonPos);
+        }
+
+        // Initialize the client
+        httplib::Client cli(host, port);
+
+        // Prepare headers
+        httplib::Headers headers = {
+            {"Content-Type", "application/json"}
+        };
+
+        // Perform the POST request
+        auto res = cli.Post(path, headers, socket_data.dump(), "application/json");
+
+        if (res) {
+            if (res->status == 200) {
+                nlohmann::json responseJson = nlohmann::json::parse(res->body);
+                std::cout << responseJson << std::endl;
+            } else {
+                std::cerr << "Error: Received status code " << res->status << ". Message: " << res->body << std::endl;
+            }
+        } else {
+            std::cerr << "Error: Unable to perform the request" << std::endl;
+        }
+    } catch (const nlohmann::json::parse_error& e) {
+        std::cerr << "JSON parse error: " << e.what() << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error sending data to controller: " << e.what() << std::endl;
     }
 }
 
 void RRT::get_controller_coords() {
-        cpr::Response response = cpr::Get(cpr::Url{this->controller_addr + "/coords"});
-        if (response.status_code != 200) {
-            std::cerr << "Error: Received status code " << response.status_code << std::endl;
-        }
+    httplib::Client cli(this->controller_addr.c_str());
 
-        json data = json::parse(response.text);
+    auto res = cli.Get("/coords");
+    if (res && res->status == 200) {
+        json data = json::parse(res->body);
         grid_size = data["matrix"].size();
         grid = std::vector<std::vector<int>>(grid_size, std::vector<int>(grid_size, 0));
 
@@ -209,18 +280,37 @@ void RRT::get_controller_coords() {
                     if (data["matrix"][i][j] == int_grid_representation) {
                         this->x = i;
                         this->y = j;
+                        std::cout << "Initial coordinates: (" << i << ", " << j << ")" << std::endl;
                     }
                 }
             }
         }
+    } else {
+        std::cerr << "Error fetching data: " << (res ? res->status : 0) << std::endl;
     }
+}
 
 void RRT::logic_loop() {
     while (server_running) {
         if (this->type == LEADER) {
             // Leader logic
-        } else {
-            // Follower logic
+            nlohmann::json socket_data;
+            socket_data["message_type"] = MessageType::LOCATION_UPDATE;
+            socket_data["leader-id"] = this->drone_id;
+            this->droneRouting.broadcast(socket_data.dump());
+
+            std::this_thread::sleep_for(std::chrono::seconds(5)); // Wait for updates
+
+            // iterate through followers and generate paths for those that are true
+            // for (const auto& follower : this->followers) {
+            //     if (follower.second) {
+            //         // Generate path
+            //         // Send task assignment
+            //         nlohmann::json task_data;
+            //         task_data["message_type"] = MessageType::TASK_ASSIGNMENT;
+            //         this->droneRouting.send(follower.first, task_data.dump(), true);
+            //     }
+            // }
         }
     }
 }
@@ -229,6 +319,8 @@ void RRT::start() {
     std::thread server_thread(&RRT::run_server, this, 8080);
     std::thread recv_thread(&RRT::recv_data, this);
     std::thread process_thread(&RRT::process_messages, this);
+    this->get_controller_coords();
+    std::thread logic_thread(&RRT::logic_loop, this);
     this->droneRouting.start();
     server_thread.join();
 }

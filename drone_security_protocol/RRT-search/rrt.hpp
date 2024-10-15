@@ -7,6 +7,7 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <unordered_map>
 #include <tuple>
 #include <cstring>
 #include <sys/socket.h>
@@ -16,7 +17,7 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
-#include <cpr/cpr.h>
+#include "httplib.h"
 #include <regex>
 #include <functional>
 #include "../DroneRouting/include/routing/drone.hpp"
@@ -80,7 +81,7 @@ class RRT {
         int grid_size;
         std::vector<std::vector<int>> grid;
         std::tuple<std::tuple<int, int>, std::tuple<int, int>> partition;
-        std::vector<std::string> followers;
+        std::unordered_map<std::string, bool> followers; // true if follower requires a new path
 
         std::string controller_addr;
 

@@ -35,12 +35,13 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Crow)
 
+# Add cpp-httplib
 FetchContent_Declare(
-    cpr
-    GIT_REPOSITORY https://github.com/libcpr/cpr.git
-    GIT_TAG 1.11.0
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG v0.11.2
 )
-FetchContent_MakeAvailable(cpr)
+FetchContent_MakeAvailable(httplib)
 
 find_package(OpenSSL REQUIRED)
 
@@ -54,19 +55,19 @@ target_include_directories(rrt
     PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../DroneRouting/include
+    ${httplib_SOURCE_DIR}
 )
 
 target_link_libraries(rrt
     PRIVATE
     DroneRouting
     Crow::Crow
-    cpr::cpr
     nlohmann_json::nlohmann_json
-    DroneRouting
     OpenSSL::SSL
     OpenSSL::Crypto
+    httplib::httplib
 )
 
 set_target_properties(rrt PROPERTIES 
-  OUTPUT_NAME "rrt"
-  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+    OUTPUT_NAME "rrt"
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

@@ -90,7 +90,7 @@ void drone::dataHandler(json& data){
 
     if (msg.isBroadcast || (msg.destAddr == this->addr)) {
         if (this->ipcServer) {
-            this->ipcServer->sendData(msg.data);
+            this->ipcServer->sendData(msg.data + "\n");
         } else {
             cout << "IPC Server not initialized" << endl;
         }
