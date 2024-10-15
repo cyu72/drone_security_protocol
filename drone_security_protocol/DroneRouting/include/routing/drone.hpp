@@ -50,7 +50,7 @@ class drone {
     public:
         drone(int port, int nodeID);
         void start();
-        int send(const string&, const string&);
+        int send(const string&, string, bool=false);
         void broadcast(const string& msg);
 
     private:

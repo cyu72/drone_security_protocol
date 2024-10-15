@@ -1,10 +1,11 @@
-FROM alpine:latest
+# Use a multi-stage build for better caching and smaller final image
+FROM alpine:latest AS builder
 
 WORKDIR /app
 
+# Install build dependencies
 RUN apk add --no-cache \
     g++ \
-    bind-tools \
     make \
     cmake \
     protobuf \
@@ -13,26 +14,40 @@ RUN apk add --no-cache \
     openssl-dev \
     python3 \
     python3-dev \
-    py3-pip && \
-    python3 -m venv /app/venv && \
-    . /app/venv/bin/activate && \
-    pip3 install --no-cache-dir Cython flask setuptools numpy requests
+    curl-dev
 
-ENV PATH="/app/venv/bin:$PATH"
+# Copy and build DroneRouting library
+COPY drone_security_protocol/DroneRouting /app/drone_security_protocol/DroneRouting
+WORKDIR /app/drone_security_protocol/DroneRouting/build
+RUN cmake .. && make
 
-COPY drone_security_protocol/CMakeLists.txt /app/drone_security_protocol/
-COPY drone_security_protocol/include /app/drone_security_protocol/include
-COPY drone_security_protocol/src /app/drone_security_protocol/src
+# Copy and build RRT-search
+COPY drone_security_protocol/RRT-search /app/drone_security_protocol/RRT-search
+WORKDIR /app/drone_security_protocol/RRT-search/build
+RUN cmake .. && make
 
-WORKDIR /app/drone_security_protocol
+# Create the final image
+FROM alpine:latest
 
-RUN mkdir build && cd build && cmake .. && make
+# Install runtime dependencies
+RUN apk add --no-cache \
+    libstdc++ \
+    openssl \
+    python3 \
+    libcurl
 
-COPY drone_security_protocol /app/drone_security_protocol
+# Copy built artifacts from the builder stage
+COPY --from=builder /app/drone_security_protocol/DroneRouting/build/libdrone_routing.so /usr/local/lib/
+COPY --from=builder /app/drone_security_protocol/RRT-search/build/bin/rrt /app/rrt
+COPY --from=builder /usr/local/lib/libcpr.so* /usr/local/lib/
 
-RUN cd RRT-search && python3 setup.py build_ext --inplace
+# Set the library path
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
+WORKDIR /app
 EXPOSE 65456
 
-WORKDIR /app/drone_security_protocol/RRT-search
-CMD ["python3", "main.py"]
+# Update the dynamic linker run-time bindings
+RUN ldconfig /usr/local/lib
+
+CMD ["/app/rrt"]

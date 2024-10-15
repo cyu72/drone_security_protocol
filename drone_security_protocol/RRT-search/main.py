@@ -1,69 +1,59 @@
 from flask import Flask, request, jsonify
-import rrt
+from rrt import MessageType, DroneType, RRT
 import multiprocessing
+import json
 import socket
 import time
 
 app = Flask(__name__)
 
-rrt_obj = None
-def handle_data(queue):
-    while True:
-        data = queue.get()
-        process_data(data)
+def start_drone(rrt_obj, queue):
+    rrt_obj.start_drone()
 
-def recv_data(queue):
+def create_and_start_rrt(queue):
+    print("Creating RRT object")
+    rrt_obj = RRT(DroneType.LISTENER)
+    print("RRT object created")
+
+    rrt_process = multiprocessing.Process(target=start_drone, args=(rrt_obj, queue))
+
+    rrt_process.start()
+
+    return rrt_process
+
+def send_to_socket(data, max_retries=15, retry_delay=5):
     host = '127.0.0.1'
     port = 60137
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
-    server_socket.listen(1)
-
-    while True:
-        conn, addr = server_socket.accept()
-        data = conn.recv(1024)
-        if not data:
-            break
-
-        print(f"Received data: {data.decode('utf-8')}")
-        queue.put(data)
-        
-        conn.close()
-
-def start_drone(rrt_obj):
-    rrt_obj.start_drone()
-
-def create_and_start_rrt():
-    global rrt_obj
-    print("Creating RRT object")
-    rrt_obj = rrt.RRT(rrt.DroneType.LISTENER)
-    print("RRT object created")
-
-    data_queue = multiprocessing.Queue()
-    receiver_process = multiprocessing.Process(target=recv_data, args=(data_queue,))
-    # handler_process = multiprocessing.Process(target=handle_data, args=(data_queue,))
-    rrt_process = multiprocessing.Process(target=start_drone, args=(rrt_obj,))
-
-    receiver_process.start()
-    # handler_process.start()
-    rrt_process.start()
-
-    # receiver_process.join()
-    # handler_process.join()
+    for attempt in range(max_retries):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_socket:
+                client_socket.connect((host, port))
+                time.sleep(4) 
+                client_socket.sendall(json.dumps(data).encode('utf-8'))
+                print(f"Sent data to socket: {data}")
+                return True  # Successfully sent data
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed. Error: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                print("Max retries reached. Failed to send data.")
+    return False  # Failed to send data after all retries
 
 @app.route('/', methods=['GET', 'POST'])
 def root():
-    global rrt_obj
     if request.method == 'POST':
         data = request.get_json()
         is_leader = data.get('is_leader', False)
         if is_leader:
             partition = data.get('partition', [])
             print(f"Received leader info. Partition: {partition}")
-            rrt_obj.set_leader(partition)
+            send_to_socket({'is_leader': True, 'partition': partition})
         else:
             print("Received follower info")
+            send_to_socket({'is_leader': False})
         return jsonify({"status": "Info received", "is_leader": is_leader}), 200
     else:
         return jsonify({"status": "Drone service is running"}), 200
@@ -72,16 +62,21 @@ def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
 if __name__ == "__main__":
+    queue = multiprocessing.Queue()
+
     # Create processes
-    drone_process = multiprocessing.Process(target=create_and_start_rrt)
+    drone_process = multiprocessing.Process(target=create_and_start_rrt, args=(queue,))
     flask_process = multiprocessing.Process(target=run_flask)
 
     # Start processes
     flask_process.start()
     drone_process.start()
 
-    # Wait for processes to complete
-    flask_process.join()
-    drone_process.join()
-
-    rrt.stop_drone()
+    try:
+        # Wait for processes to complete
+        flask_process.join()
+        drone_process.join()
+    finally:
+        # Ensure we stop all processes
+        queue.put("STOP")
+        # rrt.stop_drone()
