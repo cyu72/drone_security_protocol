@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include "httplib.h"
 #include <regex>
+#include <chrono>
 #include <functional>
 #include "../DroneRouting/include/routing/drone.hpp"
 
@@ -82,6 +83,8 @@ class RRT {
         std::vector<std::vector<int>> grid;
         std::tuple<std::tuple<int, int>, std::tuple<int, int>> partition;
         std::unordered_map<std::string, bool> followers; // true if follower requires a new path
+        std::chrono::steady_clock::time_point last_update;
+        std::chrono::seconds update_interval = std::chrono::seconds(10);
 
         std::string controller_addr;
 

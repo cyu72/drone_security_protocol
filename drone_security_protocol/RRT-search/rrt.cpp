@@ -8,6 +8,7 @@ RRT::RRT() : droneRouting(std::stoi(std::getenv("PARAM2")), std::stoi(std::geten
     this->x = 0;
     this->y = 0;
     this->controller_addr = "http://" + std::string(std::getenv("CONTROLLER_ADDR")) + ":8080";
+    this->last_update = std::chrono::steady_clock::now() - this->update_interval;
 }
 
 RRT::~RRT() {
@@ -105,8 +106,6 @@ void RRT::recv_data() {
             continue;
         }
 
-        std::cout << "New connection accepted" << std::endl;
-
         // Receive and process messages
         std::string message;
         char buffer[1024];
@@ -146,13 +145,21 @@ void RRT::process_messages() {
         try {
             auto json = nlohmann::json::parse(msg);
             if (json["message_type"] == MessageType::LEADER_UPDATE) {
-                std::cout << "Received leader update" << std::endl;
-                this->leader_id = json["leader_id"];
+                if (this->type == LEADER) {
+                    return;
+                }
 
-                nlohmann::json socket_data;
-                socket_data["message_type"] = MessageType::FOLLOWER_DATA;
-                socket_data["follower_id"] = this->drone_id;
-                this->droneRouting.send(this->leader_id, socket_data.dump(), true);
+                if ((std::chrono::steady_clock::now() - last_update) >= update_interval) {
+                    std::cout << "Received leader update" << std::endl;
+                    this->last_update = std::chrono::steady_clock::now();
+                    this->leader_id = json["leader_id"];
+
+                    nlohmann::json socket_data;
+                    socket_data["message_type"] = MessageType::FOLLOWER_DATA;
+                    socket_data["follower_id"] = this->drone_id;
+                    this->droneRouting.send(this->leader_id, socket_data.dump(), true);
+                    this->droneRouting.broadcast(msg);
+                }
 
             } else if (json["message_type"] == MessageType::FOLLOWER_DATA) {
                 std::cout << "Received follower data" << std::endl;
@@ -160,6 +167,8 @@ void RRT::process_messages() {
 
             } else if (json["message_type"] == MessageType::LOCATION_UPDATE) {
                 std::cout << "Location update received" << std::endl;
+                this->last_update = std::chrono::steady_clock::now();
+                cout << "We are a " << this->type << endl;
 
                 if (this->type == LEADER) {
                     int drone_id = json["drone-id"].get<int>();
@@ -197,10 +206,10 @@ void RRT::process_messages() {
 
             } else if (json["message_type"] == MessageType::TASK_ASSIGNMENT) {
                 std::cout << "Received task assignment" << std::endl;
+                this->last_update = std::chrono::steady_clock::now();
             }
         } catch (const std::exception& e) {
             std::cerr << "Error processing message: " << e.what() << std::endl;
-            // Print the raw message for debugging
             std::cerr << "Raw message: " << msg << std::endl;
         }
     }
@@ -311,6 +320,8 @@ void RRT::logic_loop() {
             //         this->droneRouting.send(follower.first, task_data.dump(), true);
             //     }
             // }
+        } else {
+            std::this_thread::sleep_for(std::chrono::seconds(15));
         }
     }
 }
