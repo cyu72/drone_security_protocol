@@ -4,6 +4,15 @@ project(drone_routing)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable parallel compilation
+include(ProcessorCount)
+ProcessorCount(N)
+if(NOT N EQUAL 0)
+  set(CMAKE_BUILD_PARALLEL_LEVEL ${N})
+endif()
+
+add_compile_options(-O3)
+
 file(GLOB_RECURSE LIB_SOURCES "src/*.cpp")
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
@@ -15,6 +24,7 @@ FetchContent_Declare(
   GIT_TAG        v3.7.3
 )
 set(JSON_BuildTests OFF CACHE INTERNAL "")
+set(JSON_Install OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(OpenSSL REQUIRED)
@@ -31,4 +41,16 @@ target_link_libraries(
     OpenSSL::Crypto
 )
 
-set_target_properties(DroneRouting PROPERTIES OUTPUT_NAME "drone_routing")
+set_target_properties(DroneRouting PROPERTIES 
+  OUTPUT_NAME "drone_routing"
+  UNITY_BUILD ON
+)
+
+# Use precompiled headers
+target_precompile_headers(DroneRouting PRIVATE
+  <vector>
+  <string>
+  <nlohmann/json.hpp>
+  <openssl/ssl.h>
+  <openssl/crypto.h>
+)

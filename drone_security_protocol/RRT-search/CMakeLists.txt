@@ -4,10 +4,24 @@ project(rrt_search)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable parallel compilation
+include(ProcessorCount)
+ProcessorCount(N)
+if(NOT N EQUAL 0)
+  set(CMAKE_BUILD_PARALLEL_LEVEL ${N})
+endif()
+
+# Add compile options for release build
+add_compile_options(-O3)
+
 # Add the DroneRouting subdirectory
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../DroneRouting ${CMAKE_CURRENT_BINARY_DIR}/DroneRouting)
 
 include(FetchContent)
+
+# Fetch and configure dependencies
+set(FETCHCONTENT_QUIET OFF)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 FetchContent_Declare(
   nlohmann_json
@@ -15,7 +29,7 @@ FetchContent_Declare(
   GIT_TAG        v3.7.3
 )
 set(JSON_BuildTests OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(nlohmann_json)
+set(JSON_Install OFF CACHE INTERNAL "")
 
 FetchContent_Declare(
     asio
@@ -25,6 +39,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(asio)
 
 # Set Asio variables for Crow
+FetchContent_GetProperties(asio)
 set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include CACHE INTERNAL "")
 set(ASIO_FOUND TRUE CACHE INTERNAL "")
 
@@ -33,22 +48,25 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/CrowCpp/Crow.git
     GIT_TAG v1.2.0
 )
-FetchContent_MakeAvailable(Crow)
+set(CROW_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+set(CROW_BUILD_TESTS OFF CACHE INTERNAL "")
 
-# Add cpp-httplib
 FetchContent_Declare(
     httplib
     GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
     GIT_TAG v0.11.2
 )
-FetchContent_MakeAvailable(httplib)
+set(HTTPLIB_COMPILE OFF CACHE INTERNAL "")
+
+FetchContent_MakeAvailable(nlohmann_json Crow httplib)
 
 find_package(OpenSSL REQUIRED)
 
 # rrt Executable
-add_executable(rrt 
-    rrt.cpp
-)
+add_executable(rrt rrt.cpp)
+
+# Enable unity build for rrt
+set_target_properties(rrt PROPERTIES UNITY_BUILD ON)
 
 # Add include directories
 target_include_directories(rrt 
@@ -56,6 +74,7 @@ target_include_directories(rrt
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../DroneRouting/include
     ${httplib_SOURCE_DIR}
+    ${ASIO_INCLUDE_DIR}
 )
 
 target_link_libraries(rrt
@@ -65,7 +84,17 @@ target_link_libraries(rrt
     nlohmann_json::nlohmann_json
     OpenSSL::SSL
     OpenSSL::Crypto
-    httplib::httplib
+)
+
+# Use precompiled headers
+target_precompile_headers(rrt PRIVATE
+    <vector>
+    <string>
+    <nlohmann/json.hpp>
+    <crow.h>
+    <httplib.h>
+    <openssl/ssl.h>
+    <openssl/crypto.h>
 )
 
 set_target_properties(rrt PROPERTIES 

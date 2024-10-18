@@ -22,7 +22,9 @@ parser.add_argument('--startup', action='store_true', help='Complete initial sta
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
 parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
+parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=8, help='Defines nxn sized grid.')
+parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='hardcoded', help='Choose between random or hardcoded grid')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
@@ -37,6 +39,19 @@ def generate_random_matrix(n, numDrones):
                 matrix[row][col] = num
                 break
     
+    return matrix
+
+def generate_hardcoded_matrix(n, numDrones):
+    matrix = [
+        [1, 2, 4, 0, 14, 0, 0, 0],
+        [3, 0, 0, 0, 15, 0, 0, 0],
+        [0, 0, 0, 0, 0, 9, 0, 0],
+        [5, 0, 0, 0, 0, 10, 0, 0],
+        [6, 7, 8, 0, 0, 11, 13, 0],
+        [0, 0, 0, 0, 0, 12, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0]
+    ]
     return matrix
 
 def run_command(command):
@@ -256,6 +271,8 @@ spec:
           value: "{args.max_hop_count}"
         - name: CONTROLLER_ADDR
           value: "{controller_addr}"
+        - name: TIMEOUT_SEC
+          value: "{args.timeout}"
       ports:
         - name: action-port
           protocol: TCP
@@ -341,7 +358,10 @@ data:
     valid_config = False
 
     while not valid_config:
-        matrix = generate_random_matrix(args.grid_size, droneNum)
+        if args.grid_type == 'random':
+            matrix = generate_random_matrix(args.grid_size, droneNum)
+        else:
+            matrix = generate_hardcoded_matrix(args.grid_size, droneNum)
 
         for row in matrix:
             for element in row:

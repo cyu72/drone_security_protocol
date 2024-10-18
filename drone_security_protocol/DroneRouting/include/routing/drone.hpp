@@ -132,6 +132,15 @@ class drone {
         std::atomic<bool> running{true};
 
 
+        struct PendingRoute {
+            std::string destAddr;
+            std::string msg;
+            std::chrono::steady_clock::time_point expirationTime;
+        };
+
+        std::vector<PendingRoute> pendingRoutes;
+        std::mutex pendingRoutesMutex;
+
         std::deque<string> hashChainCache; 
 
         int sendData(string containerName, const string& msg);
@@ -147,9 +156,10 @@ class drone {
         void dataHandler(json& data);
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
+        void processPendingRoutes();
 
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
-        // const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
+        const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
         IPCServer* ipcServer = nullptr;

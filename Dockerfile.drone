@@ -1,13 +1,13 @@
 # Use a multi-stage build for better caching and smaller final image
 FROM alpine:latest AS builder
 
-WORKDIR /app
-
 # Install build dependencies
 RUN apk add --no-cache \
     g++ \
     make \
     cmake \
+    ninja \
+    ccache \
     protobuf \
     protobuf-dev \
     git \
@@ -16,15 +16,36 @@ RUN apk add --no-cache \
     python3-dev \
     curl-dev
 
-# Copy and build DroneRouting library
-COPY drone_security_protocol/DroneRouting /app/drone_security_protocol/DroneRouting
-WORKDIR /app/drone_security_protocol/DroneRouting/build
-RUN cmake .. && make
+# Set up ccache
+ENV CCACHE_DIR=/ccache
+RUN mkdir -p /ccache
+
+# Copy CMakeLists.txt and source files separately to leverage Docker cache
+WORKDIR /app/drone_security_protocol/DroneRouting
+COPY drone_security_protocol/DroneRouting/CMakeLists.txt .
+COPY drone_security_protocol/DroneRouting/src ./src
+COPY drone_security_protocol/DroneRouting/include ./include
+
+# Build DroneRouting library
+RUN mkdir build && cd build && \
+    cmake -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          .. && \
+    ninja -j$(nproc)
 
 # Copy and build RRT-search
-COPY drone_security_protocol/RRT-search /app/drone_security_protocol/RRT-search
-WORKDIR /app/drone_security_protocol/RRT-search/build
-RUN cmake .. && make
+WORKDIR /app/drone_security_protocol/RRT-search
+COPY drone_security_protocol/RRT-search/CMakeLists.txt .
+COPY drone_security_protocol/RRT-search/rrt.cpp .
+COPY drone_security_protocol/RRT-search/rrt.hpp .
+
+RUN mkdir build && cd build && \
+    cmake -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          .. && \
+    ninja -j$(nproc)
 
 # Create the final image
 FROM alpine:latest

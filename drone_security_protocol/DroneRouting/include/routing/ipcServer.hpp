@@ -62,7 +62,7 @@ public:
         if (send(sock, data.c_str(), data.length(), 0) < 0) {
             throw std::runtime_error("Failed to send data");
         }
-        std::cout << "Message sent: " << data << std::endl;
+        std::cout << "IPC Data Message sent: " << data << std::endl;
     }
 
     ~IPCServer() {

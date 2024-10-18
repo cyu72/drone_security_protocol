@@ -116,8 +116,7 @@ void drone::dataHandler(json& data){
 
 void drone::broadcast(const std::string& msg) {
     DATA_MESSAGE data("BRDCST", this->addr, msg, true);
-    cout << "Printing routing table." << endl;
-    this->tesla.routingTable.print();
+    cout << "Broadcasting data." << endl;
     this->udpInterface.broadcast(data.serialize());
 }
 
@@ -132,14 +131,20 @@ int drone::send(const string& destAddr, string msg, bool isExternal){
         cout << "Route not found, initiating route discovery." << endl;
         cout << "Destination: " << destAddr << " (Size: " << destAddr.size() << " bytes)" << endl;
         cout << "Message: " << msg << " (Size: " << msg.size() << " bytes)" << endl;
-        this->initRouteDiscovery(destAddr);
         // TODO: Once completed, send that data through the route
         // Alternatively, return an error of route cannot be found
         // Start timer after this, and return 0 if rrep not recieved in time (how to catch rrep here?)
-    }
-    cout << "Sending data." << endl;
-    if (sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg) != 0){
-        // Remove this entry from our own table, start route discovery again
+        PendingRoute pendingRoute;
+        pendingRoute.destAddr = destAddr;
+        pendingRoute.msg = msg;
+        pendingRoute.expirationTime = std::chrono::steady_clock::now() + std::chrono::seconds(this->timeout_sec);
+        {
+            std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+            pendingRoutes.push_back(pendingRoute);
+        }
+        this->initRouteDiscovery(destAddr);
+    } else {
+        sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg) != 0;
     }
 
     return 1;
@@ -182,11 +187,15 @@ void drone::verifyRouteHandler(json& data){
 }
 
 int drone::sendData(string containerName, const string& msg) {
+    cout << "Attempting to connect to " << containerName << " on port " << PORT_NUMBER << endl;
     TCPInterface clientSocket(0, false); // 0 for port, false for is_server
     if (clientSocket.connect_to(containerName, PORT_NUMBER) == -1) {
         cout << "Error connecting to " << containerName << endl;
         return -1;
     }
+    cout << "Successfully connected to " << containerName << endl;
+    
+    cout << "Attempting to send data: " << msg << endl;
     if (clientSocket.send_data(msg) == -1) {
         cout << "Error sending data to " << containerName << endl;
         return -1;
@@ -374,6 +383,7 @@ void drone::routeReplyHandler(json& data){
         cout << "Successfully completed route" << endl;
         globalEndTime = std::chrono::high_resolution_clock::now();
         cout << "Elapsed Time: " << std::chrono::duration_cast<std::chrono::milliseconds>(globalEndTime - globalStartTime).count() << " ms" << endl;
+        this->processPendingRoutes();
         return;
     } else {
         cout << "Forwarding RREP to next hop." << endl;
@@ -392,6 +402,29 @@ void drone::routeReplyHandler(json& data){
         string buf = msg.serialize();
         sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, buf);
     }
+}
+
+void drone::processPendingRoutes(){
+        std::vector<PendingRoute> routesToProcess;
+
+        {
+            std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+            routesToProcess = std::move(pendingRoutes);
+            pendingRoutes.clear();
+        }
+
+        auto now = std::chrono::steady_clock::now();
+
+        for (const auto& route : routesToProcess) {
+            if (now < route.expirationTime && this->tesla.routingTable.find(route.destAddr)) {
+                sendData(this->tesla.routingTable.get(route.destAddr)->intermediateAddr, route.msg);
+            } else if (now < route.expirationTime) {
+                // If the route is not expired but still not found, re-add it to pendingRoutes
+                std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+                pendingRoutes.push_back(route);
+            }
+            // If the route is expired, it's simply discarded
+        }
 }
 
 string drone::generate_nonce(const size_t length) {
@@ -445,7 +478,7 @@ void drone::neighborDiscoveryHelper(){
         sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
-            // this->tesla.routingTable.cleanup();
+            this->tesla.routingTable.cleanup();
         }
 
         {
@@ -546,7 +579,6 @@ void drone::start() {
                 try {
                     string msg = this->tcpInterface.receive_data(clientSock);
                     
-                    cout << "Message received at: ";
                     auto now = std::chrono::system_clock::now();
                     std::time_t timestamp = std::chrono::system_clock::to_time_t(now);
                     cout << std::ctime(&timestamp);
