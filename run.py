@@ -23,8 +23,9 @@ parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Discl
 parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
 parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
-parser.add_argument('--grid_size', type=int, default=8, help='Defines nxn sized grid.')
+parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
 parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='hardcoded', help='Choose between random or hardcoded grid')
+parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
@@ -42,17 +43,22 @@ def generate_random_matrix(n, numDrones):
     return matrix
 
 def generate_hardcoded_matrix(n, numDrones):
-    matrix = [
-        [1, 2, 4, 0, 14, 0, 0, 0],
-        [3, 0, 0, 0, 15, 0, 0, 0],
-        [0, 0, 0, 0, 0, 9, 0, 0],
-        [5, 0, 0, 0, 0, 10, 0, 0],
-        [6, 7, 8, 0, 0, 11, 13, 0],
-        [0, 0, 0, 0, 0, 12, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0]
+    array = [
+        [1, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 13, 14, 15, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [11, 10, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
-    return matrix
+    
+    return array
 
 def run_command(command):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -273,6 +279,8 @@ spec:
           value: "{controller_addr}"
         - name: TIMEOUT_SEC
           value: "{args.timeout}"
+        - name: LOG_LEVEL
+          value: "{args.log_level}"
       ports:
         - name: action-port
           protocol: TCP

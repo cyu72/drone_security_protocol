@@ -188,11 +188,6 @@ struct HERR {
     private:
     static string compute_hash(const RERR& rerr) {
         string serialized_rerr = rerr.serialize();
-        cout << "Serialized RERR (hex): ";
-        for(char c : serialized_rerr) {
-            cout << std::hex << std::setw(2) << std::setfill('0') << (int)(unsigned char)c;
-        }
-        cout << endl;
         unsigned char hash[SHA256_DIGEST_LENGTH];
         SHA256_CTX sha256;
         SHA256_Init(&sha256);

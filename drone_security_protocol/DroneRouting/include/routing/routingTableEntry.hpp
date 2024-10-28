@@ -90,15 +90,6 @@ struct ROUTING_TABLE_ENTRY {
         while (this->herr.size() > 15) {
             this->herr.pop();
         }
-
-        // temp debug
-        cout << "Updated HERR queue: ";
-        std::queue<HERR> temp = this->herr;
-        while (!temp.empty()) {
-            cout << temp.front() << " ";
-            temp.pop();
-        }
-        cout << endl;
     }
 
     HERR getMostRecentHERR() const { // TEMP: may replace queue with just singular herr

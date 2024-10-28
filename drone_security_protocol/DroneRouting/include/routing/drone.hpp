@@ -31,6 +31,8 @@
 #include <chrono>
 #include <sys/time.h>
 #include <ctime>
+#include <spdlog/spdlog.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <atomic>
 #include <condition_variable>
 #include "hashTree.hpp"
@@ -45,6 +47,51 @@ using json = nlohmann::json;
 using std::cout;
 using std::endl;
 using std::string;
+
+inline spdlog::level::level_enum getLogLevelFromEnv() {
+    const char* levelEnv = std::getenv("LOG_LEVEL");
+    std::string levelStr = levelEnv ? levelEnv : "";
+    
+    if (levelStr.empty()) {
+        return spdlog::level::info;
+    }
+    
+    static const std::unordered_map<std::string, spdlog::level::level_enum> levelMap = {
+        {"TRACE", spdlog::level::trace},
+        {"DEBUG", spdlog::level::debug},
+        {"INFO", spdlog::level::info},
+        {"WARN", spdlog::level::warn},
+        {"ERROR", spdlog::level::err},
+        {"CRITICAL", spdlog::level::critical},
+        {"off", spdlog::level::off}
+    };
+
+    auto it = levelMap.find(levelStr);
+    if (it == levelMap.end()) {
+        return spdlog::level::info;
+    }
+    return it->second;
+}
+
+inline std::shared_ptr<spdlog::logger> createLogger(const std::string& name) {
+    static bool initialized = false;
+    auto level = getLogLevelFromEnv();
+    
+    if (!initialized) {
+        spdlog::set_level(level);
+        initialized = true;
+    }
+
+    auto logger = std::make_shared<spdlog::logger>(
+        name,
+        std::make_shared<spdlog::sinks::stdout_color_sink_mt>()
+    );
+    logger->set_pattern("[%^%l%$] [%n] %v");
+    
+    // Explicitly set the logger's level
+    logger->set_level(level);
+    return logger;
+}
 
 class drone {
     public:
@@ -72,7 +119,7 @@ class drone {
 
                 void insert(const std::string& key, nonce_data value) {
                     if (this->nonce_map.find(key) != this->nonce_map.end()) {
-                        std::cout << "Key '" << key << "' already exists. Updating value." << std::endl;
+                        logger->debug("Key '{}' already exists. Updating value.", key);
                     }
                     
                     this->nonce_map[key] = value;
@@ -89,16 +136,17 @@ class drone {
 
                 void printNonceMap() {
                     for (const auto& entry : nonce_map) {
-                        std::cout << "Key: " << entry.first << std::endl;
-                        std::cout << "Nonce: " << entry.second.nonce << std::endl;
-                        std::cout << "TESLA Key: " << entry.second.tesla_key << std::endl;
-                        std::cout << "Auth: " << entry.second.auth << std::endl;
-                        std::cout << "Destination: " << entry.second.destination << std::endl;
-                        std::cout << std::endl;
+                        logger->debug("Entry:");
+                        logger->debug("  Key: {}", entry.first);
+                        logger->debug("  Nonce: {}", entry.second.nonce);
+                        logger->debug("  TESLA Key: {}", entry.second.tesla_key);
+                        logger->debug("  Auth: {}", entry.second.auth);
+                        logger->debug("  Destination: {}", entry.second.destination);
                     }
                 }
 
             private:
+                std::shared_ptr<spdlog::logger> logger;
                 struct TimedHash {
                     std::chrono::system_clock::time_point disclosure_time;
                     std::string hash;
@@ -160,6 +208,7 @@ class drone {
 
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
         const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
+
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
         IPCServer* ipcServer = nullptr;
@@ -169,6 +218,8 @@ class drone {
         std::mutex helloRecvTimerMutex, routingTableMutex;
 
         string generate_nonce(const size_t length = 16);
+
+        std::shared_ptr<spdlog::logger> logger;
  
 };
 
