@@ -61,7 +61,7 @@ public:
 
     int connect_to(const std::string& host, int port, int timeout_sec = 10) {
         if (is_server) {
-            std::cout << "DEBUG: Cannot connect using a server socket" << std::endl;
+            // std::cout << "DEBUG: Cannot connect using a server socket" << std::endl;
             return -1; // Failure: Cannot connect using a server socket
         }
 
@@ -70,15 +70,15 @@ public:
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
 
-        std::cout << "DEBUG: Attempting to resolve host: " << host << " on port: " << port << std::endl;
+        // std::cout << "DEBUG: Attempting to resolve host: " << host << " on port: " << port << std::endl;
 
         int status = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &result);
         if (status != 0) {
-            std::cout << "DEBUG: Error resolving host: " << gai_strerror(status) << std::endl;
+            // std::cout << "DEBUG: Error resolving host: " << gai_strerror(status) << std::endl;
             return -1; // Failure: Error resolving host
         }
 
-        std::cout << "DEBUG: Host resolved successfully, attempting to connect" << std::endl;
+        // std::cout << "DEBUG: Host resolved successfully, attempting to connect" << std::endl;
 
         // Set socket to non-blocking mode
         int flags = fcntl(sock, F_GETFL, 0);
@@ -98,11 +98,11 @@ public:
                 // Wait for the socket to become ready
                 res = select(sock + 1, NULL, &fdset, NULL, &tv);
                 if (res == 0) {
-                    std::cout << "DEBUG: Connection attempt timed out" << std::endl;
+                    // std::cout << "DEBUG: Connection attempt timed out" << std::endl;
                     freeaddrinfo(result);
                     return -2; // Failure: Connection timeout
                 } else if (res < 0) {
-                    std::cout << "DEBUG: Error in select(): " << strerror(errno) << std::endl;
+                    // std::cout << "DEBUG: Error in select(): " << strerror(errno) << std::endl;
                     freeaddrinfo(result);
                     return -1; // Failure: Select error
                 } else {
@@ -110,13 +110,13 @@ public:
                     int error;
                     socklen_t len = sizeof(error);
                     if (getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &len) < 0 || error != 0) {
-                        std::cout << "DEBUG: Connection failed after select: " << strerror(error) << std::endl;
+                        // std::cout << "DEBUG: Connection failed after select: " << strerror(error) << std::endl;
                         freeaddrinfo(result);
                         return -1; // Failure: Connection error
                     }
                 }
             } else {
-                std::cout << "DEBUG: TCP connection failed: " << strerror(errno) << std::endl;
+                // std::cout << "DEBUG: TCP connection failed: " << strerror(errno) << std::endl;
                 freeaddrinfo(result);
                 return -1; // Failure: Immediate connection error
             }
@@ -126,38 +126,38 @@ public:
         fcntl(sock, F_SETFL, flags);
 
         freeaddrinfo(result);
-        std::cout << "DEBUG: Connection established successfully" << std::endl;
+        // std::cout << "DEBUG: Connection established successfully" << std::endl;
         return 0; // Success
     }
 
     int send_data(const std::string& msg, int client_sock = -1, int timeout_sec = 5) {
         int target_sock = (client_sock == -1) ? sock : client_sock;
 
-        std::cout << "DEBUG: Preparing to send data to socket " << target_sock << std::endl;
+        // std::cout << "DEBUG: Preparing to send data to socket " << target_sock << std::endl;
 
         // Set send timeout
         struct timeval tv;
         tv.tv_sec = timeout_sec;
         tv.tv_usec = 0;
         if (setsockopt(target_sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof tv) < 0) {
-            std::cout << "DEBUG: Error setting send timeout: " << strerror(errno) << std::endl;
+            // std::cout << "DEBUG: Error setting send timeout: " << strerror(errno) << std::endl;
             return -1; // Failure: Error setting send timeout
         }
 
-        std::cout << "DEBUG: Send timeout set to " << timeout_sec << " seconds" << std::endl;
+        // std::cout << "DEBUG: Send timeout set to " << timeout_sec << " seconds" << std::endl;
 
         ssize_t bytes_sent = send(target_sock, msg.c_str(), msg.size(), 0);
         if (bytes_sent < 0) {
             if (errno == EWOULDBLOCK || errno == EAGAIN) {
-                std::cout << "DEBUG: Send timeout occurred" << std::endl;
+                // std::cout << "DEBUG: Send timeout occurred" << std::endl;
                 return -1; // Failure: Send timeout occurred
             } else {
-                std::cout << "DEBUG: Error sending data: " << strerror(errno) << std::endl;
+                // std::cout << "DEBUG: Error sending data: " << strerror(errno) << std::endl;
                 return -1; // Failure: Error sending data
             }
         }
 
-        std::cout << "DEBUG: Successfully sent " << bytes_sent << " bytes" << std::endl;
+        // std::cout << "DEBUG: Successfully sent " << bytes_sent << " bytes" << std::endl;
         return bytes_sent;
     }
 
@@ -215,8 +215,6 @@ private:
             std::cerr << "Error converting IP to string: " << strerror(errno) << std::endl;
             return;
         }
-
-        std::cout << "Received data from: " << ip << ":" << ntohs(addr.sin_port) << std::endl;
     }
 };
 

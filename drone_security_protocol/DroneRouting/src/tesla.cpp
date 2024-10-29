@@ -27,13 +27,12 @@ std::string drone::TESLA::sha256(const std::string& inn) {
 drone::TESLA::TESLA() {
     // hashChain = new unsigned char[numKeys][SHA256_DIGEST_LENGTH];
     generateHashChain();
+    logger = createLogger("tesla");
+    logger->debug("Initialized");
     // assume time synchro has happened
 }
 
-drone::TESLA::~TESLA() {
-    std::cout << "TESLA Destructor" << std::endl;
-    // delete[] hashChain;
-}
+drone::TESLA::~TESLA() {}
 
 INIT_MESSAGE drone::TESLA::init_tesla(const std::string &addr) {
         this->addr = addr;
@@ -72,9 +71,9 @@ void drone::TESLA::generateHashChain() {
 
 void drone::TESLA::compareHashes(const unsigned char *hash1, const unsigned char *hash2) {
     if (memcmp(hash1, hash2, SHA256_DIGEST_LENGTH) == 0) {
-        std::cout << "Hashes match" << std::endl;
+        logger->debug("Hashes match");
     } else {
-        std::cout << "Hashes do not match" << std::endl;
+        logger->debug("Hashes do not match");
     }
 }
 

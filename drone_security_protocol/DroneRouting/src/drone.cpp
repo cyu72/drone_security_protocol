@@ -272,7 +272,6 @@ void drone::routeRequestHandler(json& data){
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
         RREQ msg;
         
-        logger->debug("Deserializing RREQ data");
         msg.deserialize(data);
         
         logger->debug("RREQ Details - SrcAddr: {}, DestAddr: {}, HopCount: {}", 
@@ -431,51 +430,137 @@ void drone::routeRequestHandler(json& data){
     logger->debug("=== Finished RREQ Handler ===");
 }
 
-void drone::routeReplyHandler(json& data){
-    logger->debug("Handling RREP.");
-    std::lock_guard<std::mutex> lock(this->routingTableMutex);
-    RREP msg;
-    msg.deserialize(data);
-
-    // check sha256(received hash) == cached hash for that node
-    string hashRes = msg.hash;
-    int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
-    for (int i = this->tesla.routingTable[msg.recvAddr].cost; i < hashIterations; i++) {
-        hashRes = sha256(hashRes);
-    }
-
-    if (hashRes != this->tesla.routingTable[msg.recvAddr].hash){ // code is expanded for debugging purposes
-        logger->trace("Calculated Hash: {}", hashRes);
-        logger->error("Hash does not match, dropping RREP.");
-        return;
-    } else if (msg.srcSeqNum < this->tesla.routingTable[msg.recvAddr].seqNum){
-        logger->error("Smaller seqNum, dropping RREP.");
-        return;
-    }
-
-    if (msg.destAddr == this->addr){ 
-        logger->trace("Inserting routing entry for {}", msg.srcAddr);
-        this->tesla.routingTable.insert(msg.srcAddr, ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash), msg.herr);
-        logger->info("Sucessfully completed route established to {}", msg.srcAddr);
-        globalEndTime = std::chrono::high_resolution_clock::now();
-        logger->info("Elapsed Time: {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(globalEndTime - globalStartTime).count());
-        this->processPendingRoutes();
-        return;
-    } else {
-        logger->info("Forwarding RREP to next hop.");
-        this->tesla.routingTable.insert(msg.srcAddr, ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, msg.hopCount, std::chrono::system_clock::now(), msg.hash), msg.herr);
-        msg.hopCount++;
-        msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
-        msg.recvAddr = this->addr; // update intermediate addr so final node can add to cache
+void drone::routeReplyHandler(json& data) {
+    logger->debug("=== Starting RREP Handler ===");
+    try {
+        logger->debug("Handling RREP payload: {}", data.dump());
+        std::lock_guard<std::mutex> lock(this->routingTableMutex);
+        RREP msg;
         
-        RERR rerr_prime; string nonce = generate_nonce(); string tsla_hash = this->tesla.getCurrentHash();
-        rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
-        msg.herr = HERR::create(rerr_prime, tsla_hash);
-        this->tesla.insert(msg.destAddr, TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr});
+        msg.deserialize(data);
+        
+        logger->debug("RREP Details - SrcAddr: {}, DestAddr: {}, HopCount: {}, SeqNum: {}", 
+                     msg.srcAddr, msg.destAddr, msg.hopCount, msg.srcSeqNum);
 
-        string buf = msg.serialize();
-        sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, buf);
+        // Validate message fields
+        if (msg.hash.empty()) {
+            logger->error("Invalid RREP: Empty hash");
+            return;
+        }
+
+        // Check if we have routing table entries for validation
+        logger->debug("Checking routing table entries for addr: {}", msg.recvAddr);
+        if (!this->tesla.routingTable.find(msg.recvAddr)) {
+            logger->error("No routing table entry found for receiver address");
+            return;
+        }
+
+        // Hash verification
+        string hashRes = msg.hash;
+        int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+        
+        logger->debug("Calculating hash iterations: {}", hashIterations);
+        for (int i = this->tesla.routingTable[msg.recvAddr].cost; i < hashIterations; i++) {
+            hashRes = sha256(hashRes);
+            logger->trace("Hash iteration {}: {}", i, hashRes);
+            logger->debug("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+            logger->debug("Calculated: {}", hashRes);
+        }
+
+        if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
+            logger->error("Hash verification failed");
+            logger->debug("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+            logger->debug("Calculated: {}", hashRes);
+            return;
+        }
+
+        if (msg.srcSeqNum < this->tesla.routingTable[msg.recvAddr].seqNum) {
+            logger->error("Dropping RREP: Smaller sequence number");
+            logger->debug("Received seqNum: {}, Current seqNum: {}", 
+                        msg.srcSeqNum, this->tesla.routingTable[msg.recvAddr].seqNum);
+            return;
+        }
+
+        if (msg.destAddr == this->addr) {
+            logger->info("This node is the destination for RREP");
+            try {
+                logger->debug("Creating routing table entry for source: {}", msg.srcAddr);
+                this->tesla.routingTable.insert(
+                    msg.srcAddr, 
+                    ROUTING_TABLE_ENTRY(
+                        msg.srcAddr,
+                        msg.recvAddr,
+                        msg.srcSeqNum,
+                        msg.hopCount,
+                        std::chrono::system_clock::now(),
+                        msg.hash
+                    ),
+                    msg.herr
+                );
+                
+                logger->info("Route successfully established to {}", msg.srcAddr);
+                globalEndTime = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    globalEndTime - globalStartTime).count();
+                logger->info("Total route establishment time: {} ms", duration);
+                
+                logger->debug("Processing any pending routes");
+                this->processPendingRoutes();
+                
+            } catch (const std::exception& e) {
+                logger->error("Exception while handling destination RREP: {}", e.what());
+                return;
+            }
+        } else {
+            logger->info("Forwarding RREP to next hop");
+            try {
+                logger->debug("Creating routing table entry for source: {}", msg.srcAddr);
+                if (!this->tesla.routingTable.find(msg.srcAddr)) {
+                    this->tesla.routingTable.insert(
+                        msg.srcAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.srcAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            msg.hopCount,
+                            std::chrono::system_clock::now(),
+                            msg.hash
+                        ),
+                        msg.herr
+                    );
+                }
+
+                msg.hopCount++;
+                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
+                msg.recvAddr = this->addr;
+
+                logger->debug("Creating RERR prime with nonce");
+                RERR rerr_prime;
+                string nonce = generate_nonce();
+                string tsla_hash = this->tesla.getCurrentHash();
+                
+                rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
+                msg.herr = HERR::create(rerr_prime, tsla_hash);
+                
+                this->tesla.insert(
+                    msg.destAddr,
+                    TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr}
+                );
+
+                string buf = msg.serialize();
+                auto nextHop = this->tesla.routingTable.get(msg.destAddr)->intermediateAddr;
+                logger->info("Forwarding RREP to next hop: {}", nextHop);
+                sendData(nextHop, buf);
+                
+            } catch (const std::exception& e) {
+                logger->error("Exception while forwarding RREP: {}", e.what());
+                return;
+            }
+        }
+    } catch (const std::exception& e) {
+        logger->error("Critical error in routeReplyHandler: {}", e.what());
     }
+    logger->debug("=== Finished RREP Handler ===");
 }
 
 void drone::processPendingRoutes(){
