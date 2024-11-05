@@ -186,8 +186,12 @@ class drone {
             std::chrono::steady_clock::time_point expirationTime;
         };
 
-        std::vector<PendingRoute> pendingRoutes;
+        static constexpr size_t MAX_PENDING_ROUTES = 200;
+        static constexpr size_t CLEANUP_THRESHOLD = 150;
+        std::deque<PendingRoute> pendingRoutes;
         std::mutex pendingRoutesMutex;
+        void cleanupExpiredRoutes();
+        bool addPendingRoute(const PendingRoute& route);
 
         std::deque<string> hashChainCache; 
 
@@ -205,8 +209,10 @@ class drone {
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
         void processPendingRoutes();
+        string getHashFromChain(unsigned long seqNum, unsigned long hopCount);
 
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
+        const uint8_t max_seq_count = std::stoul((std::getenv("MAX_SEQ_COUNT")));
         const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
 
         UDPInterface udpInterface;

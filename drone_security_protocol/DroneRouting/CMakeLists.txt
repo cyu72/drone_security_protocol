@@ -4,6 +4,9 @@ project(drone_routing)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enable position independent code for all targets
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # Enable parallel compilation
 include(ProcessorCount)
 ProcessorCount(N)
@@ -18,6 +21,7 @@ file(GLOB_RECURSE LIB_SOURCES "src/*.cpp")
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include(FetchContent)
 
+# Fetch dependencies
 FetchContent_Declare(
   nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -25,20 +29,40 @@ FetchContent_Declare(
 )
 set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install OFF CACHE INTERNAL "")
-FetchContent_MakeAvailable(nlohmann_json)
+
+# Configure spdlog with PIC
+FetchContent_Declare(
+  spdlog
+  GIT_REPOSITORY https://github.com/gabime/spdlog.git
+  GIT_TAG v1.14.1
+)
+set(SPDLOG_BUILD_PIC ON CACHE INTERNAL "")
+
+FetchContent_MakeAvailable(nlohmann_json spdlog)
+
+# OpenSSL configuration
+set(OPENSSL_ROOT_DIR "" CACHE PATH "OpenSSL root directory")
 
 find_package(OpenSSL REQUIRED)
+if(NOT OpenSSL_FOUND)
+  message(FATAL_ERROR "OpenSSL not found. Please install OpenSSL or specify OPENSSL_ROOT_DIR.")
+endif()
 
 # DroneRouting Library
 add_library(DroneRouting SHARED ${LIB_SOURCES})
-target_include_directories(DroneRouting PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_include_directories(DroneRouting 
+  PUBLIC 
+    ${PROJECT_SOURCE_DIR}/include
+    ${nlohmann_json_SOURCE_DIR}/include
+    ${spdlog_SOURCE_DIR}/include
+    ${OPENSSL_INCLUDE_DIR}
+)
 
-target_link_libraries(
-    DroneRouting
-    PRIVATE
+target_link_libraries(DroneRouting
+    PUBLIC
     nlohmann_json::nlohmann_json
-    OpenSSL::SSL
-    OpenSSL::Crypto
+    spdlog::spdlog
+    ${OPENSSL_LIBRARIES}
 )
 
 set_target_properties(DroneRouting PROPERTIES 
@@ -47,10 +71,12 @@ set_target_properties(DroneRouting PROPERTIES
 )
 
 # Use precompiled headers
-target_precompile_headers(DroneRouting PRIVATE
+target_precompile_headers(DroneRouting PUBLIC
   <vector>
   <string>
   <nlohmann/json.hpp>
+  <spdlog/spdlog.h>
+  PRIVATE
   <openssl/ssl.h>
   <openssl/crypto.h>
 )

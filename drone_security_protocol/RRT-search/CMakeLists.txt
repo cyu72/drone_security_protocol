@@ -24,14 +24,6 @@ set(FETCHCONTENT_QUIET OFF)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 FetchContent_Declare(
-  nlohmann_json
-  GIT_REPOSITORY https://github.com/nlohmann/json.git
-  GIT_TAG        v3.7.3
-)
-set(JSON_BuildTests OFF CACHE INTERNAL "")
-set(JSON_Install OFF CACHE INTERNAL "")
-
-FetchContent_Declare(
     asio
     GIT_REPOSITORY https://github.com/chriskohlhoff/asio.git
     GIT_TAG asio-1-28-0
@@ -58,7 +50,7 @@ FetchContent_Declare(
 )
 set(HTTPLIB_COMPILE OFF CACHE INTERNAL "")
 
-FetchContent_MakeAvailable(nlohmann_json Crow httplib)
+FetchContent_MakeAvailable(Crow httplib)
 
 find_package(OpenSSL REQUIRED)
 
@@ -72,16 +64,14 @@ set_target_properties(rrt PROPERTIES UNITY_BUILD ON)
 target_include_directories(rrt 
     PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/../DroneRouting/include
     ${httplib_SOURCE_DIR}
     ${ASIO_INCLUDE_DIR}
 )
 
 target_link_libraries(rrt
     PRIVATE
-    DroneRouting
+    DroneRouting  # This will transitively provide spdlog
     Crow::Crow
-    nlohmann_json::nlohmann_json
     OpenSSL::SSL
     OpenSSL::Crypto
 )
@@ -91,6 +81,7 @@ target_precompile_headers(rrt PRIVATE
     <vector>
     <string>
     <nlohmann/json.hpp>
+    <spdlog/spdlog.h>
     <crow.h>
     <httplib.h>
     <openssl/ssl.h>

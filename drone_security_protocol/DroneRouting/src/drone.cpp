@@ -12,30 +12,59 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->seqNum = 0;
 }
 
-void drone::clientResponseThread(){
-    /* function to handle all incoming messages from the client
-    check what type of message it is; launch the function to handle whatever type it is */
+void drone::clientResponseThread() {
+    const size_t MAX_QUEUE_SIZE = 200; // Maximum number of messages to queue
+    const int QUEUE_WARNING_THRESHOLD = 150; // Threshold for warning about queue size
     
     while (running) {
         json jsonData;
+        std::string rawMessage;
 
+        // Scope for queue access
         {
             std::unique_lock<std::mutex> lock(queueMutex);
+            
+            // Wait for message or shutdown signal
             cv.wait(lock, [this] { return !messageQueue.empty() || !running; });
             
             if (!running && messageQueue.empty()) {
                 break;
             }
             
+            // Check queue size and log warning if approaching limit
+            if (messageQueue.size() >= QUEUE_WARNING_THRESHOLD) {
+                logger->warn("Message queue size ({}) approaching maximum capacity ({})", 
+                           messageQueue.size(), MAX_QUEUE_SIZE);
+            }
+            
+            // If queue is full, drop oldest message and log error
+            if (messageQueue.size() >= MAX_QUEUE_SIZE) {
+                logger->error("Message queue full. Dropping oldest message.");
+                messageQueue.pop();
+            }
+            
             if (!messageQueue.empty()) {
-                jsonData = json::parse(messageQueue.front());
+                rawMessage = std::move(messageQueue.front());
                 messageQueue.pop();
             } else {
                 continue;
             }
         }
 
-            switch(jsonData["type"].get<int>()){
+        // Parse JSON outside of lock to minimize lock duration
+        try {
+            jsonData = json::parse(rawMessage);
+        } catch (const json::parse_error& e) {
+            logger->error("Failed to parse message: {}", e.what());
+            continue;
+        } catch (const std::exception& e) {
+            logger->error("Unexpected error parsing message: {}", e.what());
+            continue;
+        }
+
+        // Process the message
+        try {
+            switch(jsonData["type"].get<int>()) {
                 case ROUTE_REQUEST:
                     logger->info("RREQ received");
                     routeRequestHandler(jsonData);
@@ -55,8 +84,12 @@ void drone::clientResponseThread(){
                 case INIT_AUTO_DISCOVERY:
                 {
                     logger->info("Initiating auto discovery.");
-                    GCS_MESSAGE ctl; ctl.deserialize(jsonData);
-                    DATA_MESSAGE data; data.data = "Hello from drone " + std::to_string(this->nodeID); data.destAddr = ctl.destAddr; data.srcAddr = this->addr;
+                    GCS_MESSAGE ctl; 
+                    ctl.deserialize(jsonData);
+                    DATA_MESSAGE data; 
+                    data.data = "Hello from drone " + std::to_string(this->nodeID); 
+                    data.destAddr = ctl.destAddr; 
+                    data.srcAddr = this->addr;
                     send(ctl.destAddr, data.serialize());
                     break;
                 }
@@ -69,7 +102,7 @@ void drone::clientResponseThread(){
                     break;
                 }
                 case EXIT:
-                    std::exit(0); // temp, need to resolve mem leaks before actually closing
+                    std::exit(0);
                     break;
                 case VERIFY_ROUTE:
                     verifyRouteHandler(jsonData);
@@ -81,6 +114,15 @@ void drone::clientResponseThread(){
                     logger->warn("Message type not recognized.");
                     break;
             }
+        } catch (const std::exception& e) {
+            logger->error("Error processing message: {}", e.what());
+        }
+    }
+
+    // Cleanup remaining messages when shutting down
+    std::lock_guard<std::mutex> lock(queueMutex);
+    while (!messageQueue.empty()) {
+        messageQueue.pop();
     }
 }
 
@@ -121,35 +163,126 @@ void drone::broadcast(const std::string& msg) {
     this->udpInterface.broadcast(data.serialize());
 }
 
-int drone::send(const string& destAddr, string msg, bool isExternal){ 
-    /*Checks if entry in routing table; else initiates route discovery*/
+bool drone::addPendingRoute(const PendingRoute& route) {
+    std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+    
+    // Check if we've hit the size threshold
+    if (pendingRoutes.size() >= CLEANUP_THRESHOLD) {
+        cleanupExpiredRoutes();
+    }
+    
+    // If we're still at max capacity after cleanup, reject new route
+    if (pendingRoutes.size() >= MAX_PENDING_ROUTES) {
+        logger->warn("Maximum pending routes limit reached. Rejecting new route to {}", 
+                    route.destAddr);
+        return false;
+    }
+    
+    // Check for duplicate pending routes to same destination
+    auto it = std::find_if(pendingRoutes.begin(), pendingRoutes.end(),
+        [&route](const PendingRoute& existing) {
+            return existing.destAddr == route.destAddr;
+        });
+    
+    if (it != pendingRoutes.end()) {
+        // Update existing route instead of adding new one
+        it->msg = route.msg;
+        it->expirationTime = route.expirationTime;
+        logger->debug("Updated existing pending route to {}", route.destAddr);
+        return true;
+    }
+    
+    pendingRoutes.push_back(route);
+    logger->debug("Added new pending route to {}", route.destAddr);
+    return true;
+}
+
+void drone::cleanupExpiredRoutes() {
+    auto now = std::chrono::steady_clock::now();
+    
+    // Remove expired routes
+    auto newEnd = std::remove_if(pendingRoutes.begin(), pendingRoutes.end(),
+        [now](const PendingRoute& route) {
+            return now >= route.expirationTime;
+        });
+    
+    size_t removedCount = std::distance(newEnd, pendingRoutes.end());
+    pendingRoutes.erase(newEnd, pendingRoutes.end());
+    
+    if (removedCount > 0) {
+        logger->debug("Cleaned up {} expired pending routes", removedCount);
+    }
+}
+
+int drone::send(const string& destAddr, string msg, bool isExternal) {
     logger->debug("Preparing to send data: {}", msg);
-    if (isExternal){
-        DATA_MESSAGE data; data.destAddr = destAddr; data.srcAddr = this->addr; data.data = std::move(msg);
+    if (isExternal) {
+        DATA_MESSAGE data;
+        data.destAddr = destAddr;
+        data.srcAddr = this->addr;
+        data.data = std::move(msg);
         msg = data.serialize();
     }
 
     if (!this->tesla.routingTable.find(destAddr)) {
         logger->info("Route not found, initiating route discovery.");
-        logger->trace("Destination: {}", destAddr, " (Size: ", destAddr.size(), " bytes)");
-        logger->trace("Message: {}", msg, " (Size: ", msg.size(), " bytes)");
-
-        // TODO: return an error of route cannot be found
+        logger->trace("Destination: {}", destAddr);
+        logger->trace("Message: {}", msg);
 
         PendingRoute pendingRoute;
         pendingRoute.destAddr = destAddr;
         pendingRoute.msg = msg;
-        pendingRoute.expirationTime = std::chrono::steady_clock::now() + std::chrono::seconds(this->timeout_sec);
-        {
-            std::lock_guard<std::mutex> lock(pendingRoutesMutex);
-            pendingRoutes.push_back(pendingRoute);
+        pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                    std::chrono::seconds(this->timeout_sec);
+
+        if (!addPendingRoute(pendingRoute)) {
+            logger->error("Failed to queue message for {}", destAddr);
+            return -1;
         }
+
         this->initRouteDiscovery(destAddr);
     } else {
-        sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg) != 0;
+        return sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg);
     }
 
     return 1;
+}
+
+void drone::processPendingRoutes() {
+    std::vector<PendingRoute> routesToProcess;
+    
+    {
+        std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+        // Clean up expired routes first
+        cleanupExpiredRoutes();
+        
+        // Move routes to temporary vector for processing
+        routesToProcess.reserve(pendingRoutes.size());
+        for (const auto& route : pendingRoutes) {
+            routesToProcess.push_back(route);
+        }
+        pendingRoutes.clear();
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    
+    for (const auto& route : routesToProcess) {
+        if (now >= route.expirationTime) {
+            logger->debug("Route to {} expired, dropping message", route.destAddr);
+            continue;
+        }
+        
+        if (this->tesla.routingTable.find(route.destAddr)) {
+            if (sendData(this->tesla.routingTable.get(route.destAddr)->intermediateAddr, 
+                        route.msg) != 0) {
+                logger->error("Failed to send message to {}, re-queueing", route.destAddr);
+                addPendingRoute(route);
+            }
+        } else {
+            // Route still not found, but not expired - re-queue
+            addPendingRoute(route);
+        }
+    }
 }
 
 void drone::routeErrorHandler(json& data){
@@ -209,32 +342,51 @@ int drone::sendData(string containerName, const string& msg) {
     return 0;
 }
 
+string drone::getHashFromChain(unsigned long seqNum, unsigned long hopCount) {
+    size_t index = (seqNum - 1) * this->max_hop_count + hopCount;
+    
+    if (index >= hashChainCache.size()) {
+        logger->error("Hash chain access out of bounds: {} >= {}", 
+                        index, hashChainCache.size());
+        throw std::out_of_range("Hash chain index out of bounds");
+    }
+    
+    return hashChainCache[index];
+}
+
 void drone::initRouteDiscovery(const string& destAddr){
     /* Constructs an RREQ and broadcast to neighbors
     It is worth noting that routes may sometimes be incorrectly not found because a routing table clear may occur during the route discovery process. To mitagate this issue, we can try any or all of the following: 1) Retry the route discovery process X times before giving up. 2) Increase the amount of time before a routing table clear occurs (Currently at 30 seconds). Check github issue for full description.
     */
 
-    RREQ msg; msg.type = ROUTE_REQUEST; msg.srcAddr = this->addr; msg.recvAddr = this->addr; msg.destAddr = destAddr; msg.srcSeqNum = ++this->seqNum; msg.ttl = this->max_hop_count;
+    std::unique_ptr<RREQ> msg = std::make_unique<RREQ>(); msg->type = ROUTE_REQUEST; msg->srcAddr = this->addr; msg->recvAddr = this->addr; msg->destAddr = destAddr; msg->srcSeqNum = ++this->seqNum; msg->ttl = this->max_hop_count;
 
     {   
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
-        auto it = this->tesla.routingTable.get(msg.destAddr);
-        msg.destSeqNum = (it) ? it->seqNum : 0;
+        auto it = this->tesla.routingTable.get(msg->destAddr);
+        msg->destSeqNum = (it) ? it->seqNum : 0;
     }
-    msg.hopCount = 1; // 1 = broadcast range
-    msg.hash = (msg.srcSeqNum == 1) ? this->hashChainCache[1] : this->hashChainCache[(msg.srcSeqNum - 1) * this->max_hop_count + 1]; // TODO: Wrap around the cache when needed
+    msg->hopCount = 1; // 1 = broadcast range
+            try {
+            msg->hash = (msg->srcSeqNum == 1) ? 
+                getHashFromChain(1, 1) : 
+                getHashFromChain(msg->srcSeqNum - 1, 1);
+        } catch (const std::out_of_range& e) {
+            logger->error("Hash chain access error: {}", e.what());
+            return;
+        }
 
-    HashTree tree = HashTree(msg.srcAddr); // init HashTree
-    msg.hashTree = tree.toVector();
-    msg.rootHash = tree.getRoot()->hash;
+    HashTree tree = HashTree(msg->srcAddr); // init HashTree
+    msg->hashTree = tree.toVector();
+    msg->rootHash = tree.getRoot()->hash;
 
     RERR rerr_prime; string nonce = generate_nonce(); string tsla_hash = this->tesla.getCurrentHash();
-    rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
-    msg.herr = HERR::create(rerr_prime, tsla_hash);
-    this->tesla.insert(msg.destAddr, TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr});
+    rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+    msg->herr = HERR::create(rerr_prime, tsla_hash);
+    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
 
     globalStartTime = std::chrono::high_resolution_clock::now();
-    string buf = msg.serialize();
+    string buf = msg->serialize();
     udpInterface.broadcast(buf);
 }
 
@@ -277,14 +429,11 @@ void drone::routeRequestHandler(json& data){
         logger->debug("RREQ Details - SrcAddr: {}, DestAddr: {}, HopCount: {}", 
                      msg.srcAddr, msg.destAddr, msg.hopCount);
 
-        if (msg.srcAddr == this->addr) { // Drop Packet Condition: If the srcAddr is the same as the current node
-        // TODO: Add case to drop packet if this RREQ has already been seen
-        // if (msg.ttl == 0) return; // Drop Packet Condition: If the ttl is 0
+        if (msg.srcAddr == this->addr) {
             logger->debug("Dropping RREQ: Source address matches current node");
             return;
         }
 
-        // Add validation for message fields
         if (msg.hashTree.empty()) {
             logger->error("Invalid RREQ: Empty hash tree");
             return;
@@ -294,13 +443,13 @@ void drone::routeRequestHandler(json& data){
         if (this->tesla.routingTable.find(msg.srcAddr) && this->tesla.routingTable.find(msg.recvAddr)) {
             logger->debug("Found routing entries for src and recv addresses");
             
-            if (msg.srcSeqNum <= this->tesla.routingTable.get(msg.srcAddr)->seqNum) { // Drop Packet Condition: If the seqNum is less than the seqNum already received
+            if (msg.srcSeqNum <= this->tesla.routingTable.get(msg.srcAddr)->seqNum) {
                 logger->debug("Dropping RREQ: Smaller sequence number");
                 return;
             }
 
             string hashRes = msg.hash;
-            int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+            int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
             
             logger->debug("Calculating hash iterations: {}", hashIterations);
             for (int i = 1; i < hashIterations; i++) {
@@ -316,20 +465,20 @@ void drone::routeRequestHandler(json& data){
             }
         }
 
-        // Protect against null pointer dereference
-        if (msg.hashTree.empty()) {
-            logger->error("Empty hash tree in RREQ");
-            return;
-        }
-
-        logger->debug("Building HashTree with {} elements", msg.hashTree.size());
-        HashTree tree(msg.hashTree, msg.hopCount, msg.recvAddr);
-        
-        logger->debug("Verifying HashTree");
-        if (!tree.verifyTree(msg.rootHash)){
-            logger->error("HashTree verification failed - Root hash mismatch");
-            logger->debug("Expected root hash: {}", msg.rootHash);
-            logger->debug("Calculated root hash: {}", tree.getRoot()->hash);
+        // Create HashTree with RAII wrapper for automatic cleanup
+        std::unique_ptr<HashTree> tree;
+        try {
+            tree = std::make_unique<HashTree>(msg.hashTree, msg.hopCount, msg.recvAddr);
+            
+            logger->debug("Verifying HashTree");
+            if (!tree->verifyTree(msg.rootHash)) {
+                logger->error("HashTree verification failed - Root hash mismatch");
+                logger->debug("Expected root hash: {}", msg.rootHash);
+                logger->debug("Calculated root hash: {}", tree->getRoot()->hash);
+                return;
+            }
+        } catch (const std::exception& e) {
+            logger->error("Failed to create/verify HashTree: {}", e.what());
             return;
         }
 
@@ -354,7 +503,7 @@ void drone::routeRequestHandler(json& data){
                 }
 
                 rrep.hopCount = 1;
-                rrep.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + rrep.hopCount];
+                rrep.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + rrep.hopCount];
 
                 RERR rerr_prime;
                 string nonce = generate_nonce();
@@ -399,12 +548,12 @@ void drone::routeRequestHandler(json& data){
                     msg.hopCount, std::chrono::system_clock::now(), msg.hash), 
                     msg.herr);
 
-                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
+                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + msg.hopCount];
 
                 logger->debug("Updating HashTree");
-                tree.addSelf(this->addr, msg.hopCount);
-                msg.hashTree = tree.toVector();
-                msg.rootHash = tree.getRoot()->hash;
+                tree->addSelf(this->addr, msg.hopCount);
+                msg.hashTree = tree->toVector();
+                msg.rootHash = tree->getRoot()->hash;
                 
                 RERR rerr_prime;
                 string nonce = generate_nonce();
@@ -418,7 +567,7 @@ void drone::routeRequestHandler(json& data){
                 msg.recvAddr = this->addr;
                 string buf = msg.serialize();
                 logger->debug("Broadcasting updated RREQ");
-                udpInterface.broadcast(buf); // Add condition where we directly send to the neighbor if we have it cached. Else, broadcast
+                udpInterface.broadcast(buf);
             } catch (const std::exception& e) {
                 logger->error("Exception while forwarding RREQ: {}", e.what());
                 return;
@@ -457,7 +606,7 @@ void drone::routeReplyHandler(json& data) {
 
         // Hash verification
         string hashRes = msg.hash;
-        int hashIterations = (8 * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+        int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
         
         logger->debug("Calculating hash iterations: {}", hashIterations);
         for (int i = this->tesla.routingTable[msg.recvAddr].cost; i < hashIterations; i++) {
@@ -531,7 +680,7 @@ void drone::routeReplyHandler(json& data) {
                 }
 
                 msg.hopCount++;
-                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (8) + msg.hopCount];
+                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + msg.hopCount];
                 msg.recvAddr = this->addr;
 
                 logger->debug("Creating RERR prime with nonce");
@@ -561,29 +710,6 @@ void drone::routeReplyHandler(json& data) {
         logger->error("Critical error in routeReplyHandler: {}", e.what());
     }
     logger->debug("=== Finished RREP Handler ===");
-}
-
-void drone::processPendingRoutes(){
-        std::vector<PendingRoute> routesToProcess;
-
-        {
-            std::lock_guard<std::mutex> lock(pendingRoutesMutex);
-            routesToProcess = std::move(pendingRoutes);
-            pendingRoutes.clear();
-        }
-
-        auto now = std::chrono::steady_clock::now();
-
-        for (const auto& route : routesToProcess) {
-            if (now < route.expirationTime && this->tesla.routingTable.find(route.destAddr)) {
-                sendData(this->tesla.routingTable.get(route.destAddr)->intermediateAddr, route.msg);
-            } else if (now < route.expirationTime) {
-                // If the route is not expired but still not found, re-add it to pendingRoutes
-                std::lock_guard<std::mutex> lock(pendingRoutesMutex);
-                pendingRoutes.push_back(route);
-            }
-            // If the route is expired, it's simply discarded
-        }
 }
 
 string drone::generate_nonce(const size_t length) {
@@ -651,7 +777,7 @@ void drone::neighborDiscoveryHelper(){
 void drone::neighborDiscoveryFunction(){
     /* HashChain is generated where the most recent hashes are stored in the front (Eg. 0th index is the most recent hash)
     
-    Temp: Hardcoding number of hashes in hashChain (10 seqNums * 8 max hop distance) = 80x hashed
+    Temp: Hardcoding number of hashes in hashChain (50 seqNums * 7 max hop distance) = 350x hashed
         What happens when we reach the end of the hash chain?
         Skipping the step to verify authenticity of drone (implement later, not very important) 
         
@@ -664,7 +790,8 @@ void drone::neighborDiscoveryFunction(){
         ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hBuf[i]);
     }
     string hash = ss.str();
-    for (int i = 0; i < 80; ++i) {
+    int hashIterations = this->max_seq_count * this->max_hop_count;
+    for (int i = 0; i < hashIterations; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
         // cout << "Hash: " << hash << endl;
@@ -684,9 +811,6 @@ void drone::neighborDiscoveryFunction(){
             inet_ntop(AF_INET, &(client_addr.sin_addr), client_ip, INET_ADDRSTRLEN);
             int client_port = ntohs(client_addr.sin_port);
 
-            // std::cout << "Received UDP message: " << receivedMsg << std::endl;
-            // std::cout << "From: " << client_ip << ":" << client_port << std::endl;
-            // this->clientResponseThread(receivedMsg);
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
                 this->messageQueue.push(receivedMsg);
@@ -719,6 +843,7 @@ void drone::start() {
     // cout << "Waiting for " << secsToWait << " seconds." << endl;
     // sleep(secsToWait);
     // Reminder to set up phase 1 and phase 2 to only allow tesla init messages in phase 1
+    // Need to implement bootstrap phase
 
     std::thread udpThread([this](){
         this->neighborDiscoveryFunction();

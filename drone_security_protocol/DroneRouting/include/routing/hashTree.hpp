@@ -49,19 +49,23 @@ public:
     // case2: along the path, we are rebuilding tree
     HashTree(std::vector<string> hashes, int hopCount, string sourceAddr);
 
+    TreeNode* getRoot() const { 
+        if (!root) throw std::runtime_error("Accessing null root node");
+        return root;
+    }
+
     void deleteTree(TreeNode *node) {
-        if (node->left != nullptr) {
-            deleteTree(node->left);
-        }
-        if (node->right != nullptr) {
-            deleteTree(node->right);
-        }
-        // cout << "deleting node: " << node->hash << endl;
+        if (!node) return;
+        if (node->left) deleteTree(node->left);
+        if (node->right) deleteTree(node->right);
         delete node;
     }
 
     ~HashTree() {
-        deleteTree(root);
+        if (root) {
+            deleteTree(root);
+            root = nullptr;
+        }
     };
 
     void printTree(TreeNode* node){
@@ -75,7 +79,6 @@ public:
     }
 
     bool verifyTree(string&);
-    TreeNode* getRoot() { return root; }
     void addSelf(const string&, const int&);
     std::vector<string> toVector();
 };
