@@ -20,7 +20,8 @@ parser = argparse.ArgumentParser(description='TBD')
 parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
-parser.add_argument('--max_hop_count', type=int, default=8, help='Maximium number of nodes we can route messages through')
+parser.add_argument('--max_hop_count', type=int, default=7, help='Maximium number of nodes we can route messages through')
+parser.add_argument('--max_seq_count', type=int, default=50, help='Maximium number of sequence numbers we can store')
 parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
@@ -44,16 +45,16 @@ def generate_random_matrix(n, numDrones):
 
 def generate_hardcoded_matrix(n, numDrones):
     array = [
-        [1, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 2, 4, 13, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [5, 6, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [5, 6, 7, 14, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 13, 14, 15, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [11, 10, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [11, 10, 12, 15, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
@@ -66,49 +67,133 @@ def run_command(command):
     output, error = process.communicate()
     return output.decode(), error.decode()
 
-def partition_grid(matrix, num_leaders):
+def partition_grid(matrix, leader_drones):
     n = len(matrix)
     partitions = []
+    used_cells = set()
     
-    num_rows = int(math.sqrt(num_leaders))
-    num_cols = math.ceil(num_leaders / num_rows)
+    # Sort leaders from top to bottom, then left to right
+    leader_drones.sort(key=lambda x: (x[1], x[2]))
     
-    row_size = n // num_rows
-    col_size = n // num_cols
+    for leader_id, leader_row, leader_col in leader_drones:
+        # If this leader's position is already in another partition, skip it
+        if (leader_row, leader_col) in used_cells:
+            continue
+            
+        # Initialize partition boundaries
+        start_row = leader_row
+        end_row = leader_row
+        start_col = leader_col
+        end_col = leader_col
+        
+        # Find closest leader above and below
+        above_row = -1
+        below_row = n
+        left_col = -1
+        right_col = n
+        
+        for other_id, other_row, other_col in leader_drones:
+            if other_id != leader_id:
+                # Find vertical boundaries
+                if other_row < leader_row and other_row > above_row:
+                    above_row = other_row
+                elif other_row > leader_row and other_row < below_row:
+                    below_row = other_row
+                    
+                # Find horizontal boundaries
+                if other_col < leader_col and other_col > left_col:
+                    left_col = other_col
+                elif other_col > leader_col and other_col < right_col:
+                    right_col = other_col
+        
+        # Calculate partition boundaries
+        if above_row != -1:
+            start_row = (above_row + leader_row) // 2
+        else:
+            start_row = 0
+            
+        if below_row != n:
+            end_row = (below_row + leader_row) // 2
+        else:
+            end_row = n - 1
+            
+        if left_col != -1:
+            start_col = (left_col + leader_col) // 2
+        else:
+            start_col = 0
+            
+        if right_col != n:
+            end_col = (right_col + leader_col) // 2
+        else:
+            end_col = n - 1
+        
+        # Mark all cells in this partition as used
+        for i in range(start_row, end_row + 1):
+            for j in range(start_col, end_col + 1):
+                used_cells.add((i, j))
+        
+        # Create partition with all drones in the boundary
+        partition = {
+            "leader": leader_id,
+            "start_row": start_row,
+            "end_row": end_row,
+            "start_col": start_col,
+            "end_col": end_col,
+            "drones": []
+        }
+        
+        # Find all drones within the partition boundaries
+        for i in range(start_row, end_row + 1):
+            for j in range(start_col, end_col + 1):
+                if matrix[i][j] != 0:
+                    partition["drones"].append((matrix[i][j], i, j))
+        
+        partitions.append(partition)
     
-    for i in range(num_rows):
-        for j in range(num_cols):
-            if len(partitions) < num_leaders:
-                start_row = i * row_size
-                end_row = min((i + 1) * row_size, n) - 1
-                start_col = j * col_size
-                end_col = min((j + 1) * col_size, n) - 1
-                
-                if i == num_rows - 1:
-                    end_row = n - 1
-                if j == num_cols - 1:
-                    end_col = n - 1
-                
-                partition = {
-                    "start_row": start_row,
-                    "end_row": end_row,
-                    "start_col": start_col,
-                    "end_col": end_col,
-                    "drones": []
-                }
-                
-                for x in range(start_row, end_row + 1):
-                    for y in range(start_col, end_col + 1):
-                        if matrix[x][y] != 0:
-                            partition["drones"].append((matrix[x][y], x, y))
-                
-                partitions.append(partition)
+    # Handle any unassigned cells by expanding existing partitions
+    unassigned = []
+    for i in range(n):
+        for j in range(n):
+            if (i, j) not in used_cells:
+                unassigned.append((i, j))
     
+    if unassigned:
+        # Assign unassigned cells to the nearest partition
+        for i, j in unassigned:
+            min_distance = float('inf')
+            closest_partition = None
+            
+            for partition in partitions:
+                # Calculate distance to partition center
+                center_row = (partition["start_row"] + partition["end_row"]) / 2
+                center_col = (partition["start_col"] + partition["end_col"]) / 2
+                distance = ((i - center_row) ** 2 + (j - center_col) ** 2) ** 0.5
+                
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_partition = partition
+            
+            if closest_partition:
+                # Expand the closest partition to include this cell
+                closest_partition["start_row"] = min(closest_partition["start_row"], i)
+                closest_partition["end_row"] = max(closest_partition["end_row"], i)
+                closest_partition["start_col"] = min(closest_partition["start_col"], j)
+                closest_partition["end_col"] = max(closest_partition["end_col"], j)
+                
+                # Add any drones in this cell to the partition
+                if matrix[i][j] != 0:
+                    closest_partition["drones"].append((matrix[i][j], i, j))
+    
+    print(f"Partitions: {partitions}")
     return partitions
 
 def select_leader_drones(matrix, num_leaders):
-    drones = [(matrix[i][j], i, j) for i in range(len(matrix)) for j in range(len(matrix[i])) if matrix[i][j] != 0]
-    return random.sample(drones, min(num_leaders, len(drones)))
+    if args.grid_type == 'random':
+        drones = [(matrix[i][j], i, j) for i in range(len(matrix)) for j in range(len(matrix[i])) if matrix[i][j] != 0]
+        return random.sample(drones, min(num_leaders, len(drones)))
+    else:
+        hardcoded_leaders = [(1, 0, 0), (5, 4, 0), (11, 9, 0)]
+        return hardcoded_leaders[:num_leaders]
 
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
@@ -194,6 +279,22 @@ def update_coords():
         if to_i < 0 or to_i >= len(matrix) or to_j < 0 or to_j >= len(matrix[0]):
             return jsonify({"error": f"Position ({to_i}, {to_j}) is out of bounds"}), 400
         
+        current_pos = None
+        for i in range(len(matrix)):
+            for j in range(len(matrix[0])):
+                if matrix[i][j] == drone:
+                    current_pos = (i, j)
+                    break
+            if current_pos:
+                break
+        
+        if current_pos and current_pos == (to_i, to_j):
+            print_matrix(matrix)
+            return jsonify({
+                "message": "Drone is already at the requested position",
+                "new_matrix": matrix
+            }), 200
+        
         if matrix[to_i][to_j] != 0:
             return jsonify({"error": f"Position ({to_i}, {to_j}) is not empty"}), 400
         
@@ -275,6 +376,8 @@ spec:
           value: "{args.tesla_disclosure_time}"
         - name: MAX_HOP_COUNT
           value: "{args.max_hop_count}"
+        - name: MAX_SEQ_COUNT
+          value: "{args.max_seq_count}"
         - name: CONTROLLER_ADDR
           value: "{controller_addr}"
         - name: TIMEOUT_SEC
@@ -464,7 +567,7 @@ spec:
 
             num_leaders = 3
             leader_drones = select_leader_drones(matrix, num_leaders)
-            partitions = partition_grid(matrix, num_leaders)
+            partitions = partition_grid(matrix, leader_drones)
 
             for service in services.items:
                 if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
