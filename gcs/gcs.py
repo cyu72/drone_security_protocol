@@ -3,8 +3,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID, ExtensionOID
 from datetime import datetime, timedelta, timezone
-import logging
-from typing import Optional, Set
+from typing import Dict, Any, Optional
+import logging, os
 from pathlib import Path
 from crypto_utils import CryptoUtils
 from crl_manager import CRLManager
@@ -14,34 +14,20 @@ from pki_gen import PKISetup
 
 class GCS:
     def __init__(self, base_dir: str = "certs"):
-        """Initialize the Ground Control Station with auto-setup of PKI if needed"""
-        # Set up logging
         self.logger = logging.getLogger('GCS_SERVER')
         self.logger.setLevel(logging.INFO)
-        
         self.base_dir = Path(base_dir)
         self.config = PKIConfig()
         self.crypto_utils = CryptoUtils()
         self.app = Flask(__name__)
+        self.cert_validity_minutes = int(os.getenv('CERT_VALIDITY_MINUTES', '59'))
+        self.skip_verification = os.getenv('SKIP_VERIFICATION', 'false').lower() == 'true'
         self.setup_routes()
-        
-        # Initialize key pair
         self.private_key, self.public_key = self.crypto_utils.generate_key_pair()
-        
-        # Check if PKI infrastructure exists, if not create it
         self._ensure_pki_infrastructure()
-        
-        # Load PKI materials
         self._load_pki_materials()
-        
-        # Initialize allowed drones set
-        self.allowed_drones: Set[tuple] = set()
-        
-        # Start bootstrap phase
+        self.allowed_drones = set()
         self._start_bootstrap_phase()
-            
-        self.logger.info("GCS initialized successfully")
-        self.logger.info(f"Bootstrap phase will last for: {self.config.BOOTSTRAP_DURATION}")
 
     def _start_bootstrap_phase(self):
         """Start the bootstrap phase for certificate enrollment"""
@@ -50,64 +36,37 @@ class GCS:
         self.logger.info(f"Bootstrap phase will end at {self.config.BOOTSTRAP_START_TIME + self.config.BOOTSTRAP_DURATION}")
 
     def setup_routes(self):
-        @self.app.route('/request_certificate', methods=['POST'])
-        def handle_cert_request():
-            try:
-                # Check if we're in bootstrap phase
-                if not self.config.is_in_bootstrap_phase():
-                    remaining_time = self.config.get_bootstrap_remaining_time()
-                    if remaining_time and remaining_time.total_seconds() <= 0:
-                        return jsonify({
-                            'error': 'Bootstrap phase has ended. Certificate requests are no longer accepted.',
-                            'bootstrap_ended_at': (self.config.BOOTSTRAP_START_TIME + 
-                                                 self.config.BOOTSTRAP_DURATION).isoformat()
-                        }), 403
-                    return jsonify({
-                        'error': 'Bootstrap phase has not started yet',
-                        'current_time': datetime.now(timezone.utc).isoformat()
-                    }), 403
-
-                data = request.get_json()
-                
-                # Extract request data
-                drone_id = data.get('drone_id')
-                manufacturer_id = data.get('manufacturer_id')
-                csr_pem = data.get('csr')
-                
-                if not all([drone_id, manufacturer_id, csr_pem]):
-                    return jsonify({'error': 'Missing required fields'}), 400
-                
-                # Load CSR
-                csr = x509.load_pem_x509_csr(csr_pem.encode('utf-8'))
-                
-                # Verify CSR signature
+            @self.app.route('/request_certificate', methods=['POST'])
+            def handle_cert_request():
                 try:
-                    csr.public_key().verify(
-                        csr.signature,
-                        csr.tbs_certrequest_bytes,
-                        ec.ECDSA(hashes.SHA256())
-                    )
-                except Exception:
-                    return jsonify({'error': 'Invalid CSR signature'}), 400
-                
-                # During bootstrap phase, automatically add to allowed drones
-                self.add_allowed_drone(drone_id, manufacturer_id)
-                self.logger.info(f"Added drone {drone_id}/{manufacturer_id} during bootstrap phase")
-                
-                # Generate certificate
-                cert = self.generate_certificate(csr, drone_id, manufacturer_id)
-                
-                # Return the certificate with bootstrap phase info
-                response_data = {
-                    'certificate': cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
-                    'bootstrap_remaining': self.config.get_bootstrap_remaining_time().total_seconds()
-                }
-                
-                return jsonify(response_data), 200
-                
-            except Exception as e:
-                self.logger.error(f"Certificate request handling failed: {str(e)}")
-                return jsonify({'error': 'Internal server error'}), 500
+                    data = request.get_json()
+                    drone_id, manufacturer_id, csr_pem = data.get('drone_id'), data.get('manufacturer_id'), data.get('csr')
+                    
+                    if not all([drone_id, manufacturer_id, csr_pem]):
+                        return jsonify({'status': 'error', 'message': 'Missing fields'}), 400
+                        
+                    csr = x509.load_pem_x509_csr(csr_pem.encode('utf-8'))
+                    
+                    if not self.skip_verification:
+                        try:
+                            csr.public_key().verify(csr.signature, csr.tbs_certrequest_bytes, ec.ECDSA(hashes.SHA256()))
+                            if not self.verify_drone_identity(drone_id, manufacturer_id):
+                                return jsonify({'status': 'error', 'message': 'Identity verification failed'}), 403
+                        except Exception:
+                            return jsonify({'status': 'error', 'message': 'Invalid CSR'}), 400
+                    
+                    cert = self.generate_certificate(csr, drone_id, manufacturer_id)
+                    return jsonify({'status': 'success', 'certificate': self.format_certificate_response(cert, drone_id, manufacturer_id)}), 200
+                    
+                except Exception as e:
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    def _get_name_attribute(self, name: x509.Name, oid: NameOID) -> Optional[str]:
+        """Safely extract name attribute from certificate subject/issuer"""
+        try:
+            return name.get_attributes_for_oid(oid)[0].value
+        except (IndexError, ValueError):
+            return None
 
     def _ensure_pki_infrastructure(self):
         """Ensure PKI infrastructure exists, create if it doesn't"""
@@ -230,59 +189,62 @@ class GCS:
             self.logger.error(f"Certificate verification failed: {str(e)}")
             return False
 
-    def generate_certificate(self, csr: x509.CertificateSigningRequest, 
-                           drone_id: str, manufacturer_id: str) -> x509.Certificate:
-        """Generate a certificate from a CSR"""
-        # Create certificate builder
+    def format_certificate_response(self, cert: x509.Certificate, drone_id: str, manufacturer_id: str) -> Dict[str, Any]:
+        key_usage = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value
+        return {
+            'certificate_data': {
+                'pem': cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
+                'serial_number': str(cert.serial_number),
+                'public_key': cert.public_key().public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                ).decode('utf-8'),
+                'ca_public_key': self.ca_cert.public_bytes(
+                    encoding=serialization.Encoding.PEM
+                ).decode('utf-8')
+            },
+            'validity': {
+                'not_before': cert.not_valid_before_utc.isoformat(),
+                'not_after': cert.not_valid_after_utc.isoformat()
+            },
+            'subject': {
+                'drone_id': drone_id,
+                'manufacturer_id': manufacturer_id,
+                'common_name': self._get_name_attribute(cert.subject, NameOID.COMMON_NAME)
+            },
+            'issuer': {
+                'common_name': self._get_name_attribute(cert.issuer, NameOID.COMMON_NAME),
+                'organization': self._get_name_attribute(cert.issuer, NameOID.ORGANIZATION_NAME)
+            },
+            'key_usage': {
+                'digital_signature': key_usage.digital_signature,
+                'key_encipherment': key_usage.key_encipherment
+            },
+            'metadata': {
+                'issued_at': datetime.now(timezone.utc).isoformat(),
+                'version': cert.version.name
+            }
+        }
+
+    def generate_certificate(self, csr: x509.CertificateSigningRequest, drone_id: str, manufacturer_id: str) -> x509.Certificate:
         builder = x509.CertificateBuilder()
-        
-        # Set serial number
-        builder = builder.serial_number(x509.random_serial_number())
-        
-        # Set subject from CSR
-        builder = builder.subject_name(csr.subject)
-        
-        # Set issuer (the CA's information)
-        builder = builder.issuer_name(self.ca_cert.subject)
-        
-        # Set validity period
         now = datetime.now(timezone.utc)
+        builder = builder.serial_number(x509.random_serial_number())
+        builder = builder.subject_name(csr.subject)
+        builder = builder.issuer_name(self.ca_cert.subject)
         builder = builder.not_valid_before(now)
-        builder = builder.not_valid_after(now + timedelta(days=self.config.MAX_CERT_VALIDITY_DAYS))
-        
-        # Set public key from CSR
+        builder = builder.not_valid_after(now + timedelta(minutes=self.cert_validity_minutes))
         builder = builder.public_key(csr.public_key())
-        
-        # Add basic constraints extension
-        builder = builder.add_extension(
-            x509.BasicConstraints(ca=False, path_length=None),
-            critical=True
-        )
-        
-        # Add key usage extension
+        builder = builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         builder = builder.add_extension(
             x509.KeyUsage(
-                digital_signature=True,
-                content_commitment=False,
-                key_encipherment=True,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=False,
-                crl_sign=False,
-                encipher_only=False,
+                digital_signature=True, content_commitment=False,
+                key_encipherment=True, data_encipherment=False,
+                key_agreement=False, key_cert_sign=False,
+                crl_sign=False, encipher_only=False,
                 decipher_only=False
-            ),
-            critical=True
-        )
-        
-        # Sign certificate
-        certificate = builder.sign(
-            private_key=self.ca_private_key,
-            algorithm=hashes.SHA256()
-        )
-        
-        return certificate
+            ), critical=True)
+        return builder.sign(private_key=self.ca_private_key, algorithm=hashes.SHA256())
 
     def run(self, host='0.0.0.0', port=5000):
-        """Run the GCS server"""
         self.app.run(host=host, port=port)

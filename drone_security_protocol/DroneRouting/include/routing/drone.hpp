@@ -35,11 +35,14 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <atomic>
 #include <condition_variable>
+#include <future>
+#include <set>
 #include "hashTree.hpp"
 #include "messages.hpp"
 #include "ipcServer.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
+#include "pki_client.hpp"
 #include "network_adapters/kube_udp_interface.hpp"
 #include "network_adapters/tcp_interface.hpp"
 
@@ -99,6 +102,7 @@ class drone {
         void start();
         int send(const string&, string, bool=false);
         void broadcast(const string& msg);
+        std::future<void> getSignal();
 
     private:
         class TESLA {
@@ -178,6 +182,7 @@ class drone {
         std::mutex queueMutex;
         std::condition_variable cv;
         std::atomic<bool> running{true};
+        std::vector<std::thread> threads;
 
 
         struct PendingRoute {
@@ -226,7 +231,16 @@ class drone {
         string generate_nonce(const size_t length = 16);
 
         std::shared_ptr<spdlog::logger> logger;
- 
+
+        std::unique_ptr<PKIClient> pki_client;
+        std::set<std::string> validatedNodes;
+        std::mutex validationMutex;
+        std::promise<void> init_promise;
+        bool cert_received = false;
+        bool isValidatedSender(const std::string& sender);
+        void markSenderAsValidated(const std::string& sender);
+        std::vector<uint8_t> generateChallengeData(size_t length = 32);
+        void challengeResponseHandler(json& data);
 };
 
 #endif
