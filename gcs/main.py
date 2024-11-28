@@ -1,259 +1,173 @@
 import socket
-from enum import IntEnum
-import json
-from abc import ABC, abstractmethod
+import threading
+import logging
+from pathlib import Path
+from messages import MESSAGE_TYPE, GCS_MESSAGE, RREQ, RREP
+from gcs import GCS
 
+# Constants
 PORT_NUMBER = 80
 BRDCST_PORT = 65467
 
-class MESSAGE_TYPE(IntEnum):
-    ROUTE_REQUEST = 0
-    ROUTE_REPLY = 1
-    ROUTE_ERROR = 2
-    DATA = 3
-    INIT_ROUTE_DISCOVERY = 4
-    VERIFY_ROUTE = 5
-    HELLO = 6
-    INIT_AUTO_DISCOVERY = 7
-    EXIT = 8
-
-class MESSAGE(ABC):
-    def __init__(self, message_type):
-        self.type = message_type
-
-    @abstractmethod
-    def serialize(self):
-        pass
-
-    @abstractmethod
-    def deserialize(self, j):
-        pass
-
-class GCS_MESSAGE(MESSAGE):
-    def __init__(self, src_addr="NILL", dest_addr="NILL", message_type=MESSAGE_TYPE.DATA):
-        super().__init__(message_type)
-        self.src_addr = src_addr
-        self.dest_addr = dest_addr
-
-    def serialize(self):
-        j = {
-            "type": int(self.type),  # Convert enum to int
-            "srcAddr": self.src_addr,
-            "destAddr": self.dest_addr,
-        }
-        print(json.dumps(j))
-        return json.dumps(j)
-
-    def deserialize(self, j):
-        data = json.loads(j)
-        self.type = MESSAGE_TYPE(data["type"])
-        self.src_addr = data["srcAddr"]
-        self.dest_addr = data["destAddr"]
-
-class RREQ(MESSAGE):
-    def __init__(self, src_addr="", dest_addr="", src_seq_num=0, dest_seq_num=0, hash_value="", hop_count=0, herr=0):
-        super().__init__(MESSAGE_TYPE.ROUTE_REQUEST)
-        self.src_addr = src_addr
-        self.dest_addr = dest_addr
-        self.src_seq_num = src_seq_num
-        self.dest_seq_num = dest_seq_num
-        self.hash = hash_value
-        self.hop_count = hop_count
-        self.HERR = herr
-
-    def serialize(self):
-        j = {
-            "type": self.type,
-            "srcAddr": self.src_addr,
-            "destAddr": self.dest_addr,
-            "srcSeqNum": self.src_seq_num,
-            "destSeqNum": self.dest_seq_num,
-            "hash": self.hash,
-            "hopCount": self.hop_count,
-            "HERR": self.HERR
-        }
-        return json.dumps(j)
-
-    def deserialize(self, j):
-        data = json.loads(j)
-        self.type = MESSAGE_TYPE(data["type"])
-        self.src_addr = data["srcAddr"]
-        self.dest_addr = data["destAddr"]
-        self.src_seq_num = data["srcSeqNum"]
-        self.dest_seq_num = data["destSeqNum"]
-        self.hash = data["hash"]
-        self.hop_count = data["hopCount"]
-        self.HERR = data["HERR"]
-
-class RREP(MESSAGE):
-    def __init__(self, src_addr="", dest_addr="", src_seq_num=0, dest_seq_num=0, hash_value="", hop_count=0, herr=0):
-        super().__init__(MESSAGE_TYPE.ROUTE_REPLY)
-        self.src_addr = src_addr
-        self.dest_addr = dest_addr
-        self.src_seq_num = src_seq_num
-        self.dest_seq_num = dest_seq_num
-        self.hash = hash_value
-        self.hop_count = hop_count
-        self.HERR = herr
-
-    def serialize(self):
-        j = {
-            "type": self.type,
-            "srcAddr": self.src_addr,
-            "destAddr": self.dest_addr,
-            "srcSeqNum": self.src_seq_num,
-            "destSeqNum": self.dest_seq_num,
-            "hash": self.hash,
-            "hopCount": self.hop_count,
-            "HERR": self.HERR
-        }
-        return json.dumps(j)
-
-    def deserialize(self, j):
-        data = json.loads(j)
-        self.type = MESSAGE_TYPE(data["type"])
-        self.src_addr = data["srcAddr"]
-        self.dest_addr = data["destAddr"]
-        self.src_seq_num = data["srcSeqNum"]
-        self.dest_seq_num = data["destSeqNum"]
-        self.hash = data["hash"]
-        self.hop_count = data["hopCount"]
-        self.HERR = data["HERR"]
-
-def send_data(container_name, msg):
-    try:
-        # Get address info
-        addrinfo = socket.getaddrinfo(container_name, PORT_NUMBER, socket.AF_INET, socket.SOCK_STREAM)
+class GCS_SERVER:
+    def __init__(self):
+        # Set up logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        self.logger = logging.getLogger('GCS_SERVER')
         
-        # Use the first result
-        family, socktype, proto, _, sockaddr = addrinfo[0]
+        self.gcs = GCS()
+        self.socket = None
         
-        # Create socket
-        with socket.socket(family, socktype, proto) as sock:
-            # Connect to the server
-            sock.connect(sockaddr)
+    def _handle_client(self, client_socket, client_address):
+        """Handle individual client connections"""
+        self.logger.info(f"New connection from {client_address}")
+        try:
+            while True:
+                # Receive data
+                data = client_socket.recv(4096)
+                if not data:
+                    break
+                    
+                # Process message
+                try:
+                    message = GCS_MESSAGE()
+                    message.deserialize(data.decode())
+                    
+                    # Handle different message types
+                    if message.type == MESSAGE_TYPE.ROUTE_REQUEST:
+                        # Verify client certificate before processing route request
+                        if not self._verify_client_certificate(client_socket):
+                            self.logger.warning(f"Failed certificate verification for {client_address}")
+                            break
+                        # Handle route request
+                        self._handle_route_request(message, client_socket)
+                    elif message.type == MESSAGE_TYPE.INIT_AUTO_DISCOVERY:
+                        # Handle auto discovery
+                        self._handle_auto_discovery(message, client_socket)
+                    elif message.type == MESSAGE_TYPE.EXIT:
+                        self.logger.info(f"Client {client_address} requested disconnection")
+                        break
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing message: {str(e)}")
+                    
+        except Exception as e:
+            self.logger.error(f"Error handling client {client_address}: {str(e)}")
+        finally:
+            client_socket.close()
+            self.logger.info(f"Connection closed for {client_address}")
+
+    def _verify_client_certificate(self, client_socket):
+        """Verify client's certificate"""
+        try:
+            # Request client certificate
+            client_socket.send(b"SEND_CERT")
+            cert_data = client_socket.recv(4096)
             
-            # Send data
-            bytes_sent = sock.send(msg.encode())
+            # Verify certificate using GCS
+            return self.gcs.verify_drone_certificate(cert_data)
+        except Exception as e:
+            self.logger.error(f"Certificate verification error: {str(e)}")
+            return False
+
+    def _handle_route_request(self, message, client_socket):
+        """Handle route request messages"""
+        try:
+            # Process RREQ message
+            rreq = RREQ()
+            rreq.deserialize(message.serialize())
             
-            if bytes_sent == 0:
-                print("No data was sent")
+            # Create and send route reply
+            rrep = RREP(
+                src_addr=rreq.dest_addr,
+                dest_addr=rreq.src_addr,
+                src_seq_num=rreq.src_seq_num,
+                dest_seq_num=rreq.dest_seq_num,
+                hash_value=rreq.hash,
+                hop_count=0
+            )
             
-    except socket.gaierror as e:
-        print(f"Error resolving host: {e}")
-    except socket.error as e:
-        print(f"Socket error: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+            client_socket.send(rrep.serialize().encode())
+            
+        except Exception as e:
+            self.logger.error(f"Error handling route request: {str(e)}")
+
+    def _handle_auto_discovery(self, message, client_socket):
+        """Handle auto discovery messages"""
+        try:
+            # Extract drone information from message
+            drone_id = message.src_addr
+            manufacturer_id = "UNKNOWN"  # Would normally extract from message
+            
+            # Add to allowed drones if not already present
+            self.gcs.add_allowed_drone(drone_id, manufacturer_id)
+            
+            # Send acknowledgment
+            response = GCS_MESSAGE(
+                src_addr="GCS",
+                dest_addr=drone_id,
+                message_type=MESSAGE_TYPE.DATA
+            )
+            client_socket.send(response.serialize().encode())
+            
+        except Exception as e:
+            self.logger.error(f"Error handling auto discovery: {str(e)}")
+            
+    def start(self):
+        """Start the server"""
+        try:
+            # Start GCS Flask server in a separate thread
+            gcs_thread = threading.Thread(target=self.gcs.run)
+            gcs_thread.daemon = True
+            gcs_thread.start()
+            self.logger.info("GCS server started")
+            
+            # Create main socket server
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            # Bind and listen
+            server_address = ('', PORT_NUMBER)
+            self.socket.bind(server_address)
+            self.socket.listen(5)
+            self.logger.info(f"Socket server listening on port {PORT_NUMBER}")
+            
+            # Main server loop
+            while True:
+                client_socket, client_address = self.socket.accept()
+                # Start new thread for each client
+                client_thread = threading.Thread(
+                    target=self._handle_client,
+                    args=(client_socket, client_address)
+                )
+                client_thread.daemon = True
+                client_thread.start()
+                
+        except Exception as e:
+            self.logger.error(f"Server error: {str(e)}")
+            if self.socket:
+                self.socket.close()
+            raise
+            
+    def stop(self):
+        """Stop the server"""
+        if self.socket:
+            self.socket.close()
+            self.logger.info("Server stopped")
 
 def main():
+    server = GCS_SERVER()
     try:
-        # Create a socket
-        listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        
-        # Allow reuse of address/port
-        listen_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        # Bind the socket to a specific address and port
-        server_address = ('', PORT_NUMBER)  # '' means INADDR_ANY
-        listen_sock.bind(server_address)
-        
-        # Listen for incoming connections
-        listen_sock.listen(5)
-        
-        print(f"GCS Server running on port {PORT_NUMBER}")
-    
-    except socket.error as e:
-        print(f"Error: {e}")
-        exit(1)
-
-    while True:
-            print("1) Initiate Route Discovery\n2) Print Route\n3) Send UDP Message\n4) Send auto-routed message\n5) Send to IP\n6) Exit")
-            user_input = input("> ")
-
-            if not user_input:
-                continue
-
-            try:
-                choice = int(user_input)
-            except ValueError:
-                print("Invalid input. Please enter a number.")
-                continue
-
-            if choice == 1:
-                drone_id = input("Enter drone ID [number]: ")
-                if not drone_id:
-                    print("No input received. Returning to main menu.")
-                    continue
-                container_name = f"drone{drone_id}-service.default"
-
-                dest_id = input("Enter destination ID [number]: ")
-                if not dest_id:
-                    print("No input received. Returning to main menu.")
-                    continue
-                dest_addr = f"drone{dest_id}-service.default"
-
-                if container_name == dest_addr:
-                    print("Error: Cannot send message to self")
-                    continue
-
-                msg = GCS_MESSAGE(container_name, dest_addr, MESSAGE_TYPE.INIT_ROUTE_DISCOVERY)
-                json_str = msg.serialize()
-                send_data(container_name, json_str)
-
-            elif choice == 2:
-                drone_id = input("Enter drone ID [number]: ")
-                if not drone_id:
-                    print("No input received. Returning to main menu.")
-                    continue
-                container_name = f"drone{drone_id}-service.default"
-                msg = GCS_MESSAGE(container_name, "NILL", MESSAGE_TYPE.VERIFY_ROUTE)
-                json_str = msg.serialize()
-                send_data(container_name, json_str)
-
-            elif choice == 3:
-                continue
-            #     drone_id = input("Enter drone ID [number]: ")
-            #     if not drone_id:
-            #         print("No input received. Returning to main menu.")
-            #         continue
-            #     container_name = f"drone{drone_id}-service.default"
-            #     json_str = input("Enter UDP message: ")
-            #     if not json_str:
-            #         print("No message entered. Returning to main menu.")
-            #         continue
-            #     send_data_udp(container_name, json_str)
-
-            elif choice == 4:
-                drone_id = input("Enter drone ID [number]: ")
-                if not drone_id:
-                    print("No input received. Returning to main menu.")
-                    continue
-                container_name = f"drone{drone_id}-service.default"
-                dest_id = input("Enter destination ID [number]: ")
-                if not dest_id:
-                    print("No input received. Returning to main menu.")
-                    continue
-                dest_addr = f"drone{dest_id}-service.default"
-                msg = GCS_MESSAGE("NILL", dest_addr, MESSAGE_TYPE.INIT_AUTO_DISCOVERY)
-                json_str = msg.serialize()
-                send_data(container_name, json_str)
-
-            elif choice == 5:
-                dest_addr = input("Enter IP address: ")
-                if not dest_addr:
-                    print("No IP address entered. Returning to main menu.")
-                    continue
-                json_str = input("Enter message: ")
-                if not json_str:
-                    print("No message entered. Returning to main menu.")
-                    continue
-                send_data(dest_addr, json_str)
-            elif choice == 6:
-                print("Exiting...")
-                break
-            else:
-                print("Invalid choice. Please try again.")
+        server.start()
+    except KeyboardInterrupt:
+        server.logger.info("Shutting down server...")
+        server.stop()
+    except Exception as e:
+        server.logger.error(f"Fatal error: {str(e)}")
+        server.stop()
 
 if __name__ == "__main__":
     main()

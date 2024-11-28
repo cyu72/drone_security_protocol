@@ -898,11 +898,24 @@ void RRT::start() {
     std::thread server_thread(&RRT::run_server, this, 8080);
     std::thread recv_thread(&RRT::recv_data, this);
     std::thread process_thread(&RRT::process_messages, this);
+    
     this->get_controller_coords();
+    
+    std::cout << "About to start drone routing" << std::endl;
+    auto signal = droneRouting.getSignal();  // Get future before starting thread
+    
+    std::thread drone_thread([this]() {
+        droneRouting.start();
+    });
+    
+    std::cout << "Waiting for signal" << std::endl;
+    signal.wait();
+    std::cout << "Signal received" << std::endl;
+    
     std::thread logic_thread(&RRT::logic_loop, this);
-    this->droneRouting.start();
     server_thread.join();
 }
+
 
 int main() {
     RRT rrt;

@@ -17,7 +17,7 @@ colorama.init(autoreset=True)
 matrix = []
 
 parser = argparse.ArgumentParser(description='TBD')
-parser.add_argument('--drone_count', type=int, default=15, help='Specify number of drones in simulation')
+parser.add_argument('--drone_count', type=int, default=5, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=7, help='Maximium number of nodes we can route messages through')
@@ -27,6 +27,8 @@ parser.add_argument('--timeout', type=int, default=30, help='Timeout for each re
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
 parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='hardcoded', help='Choose between random or hardcoded grid')
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
+parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
+parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
@@ -45,16 +47,16 @@ def generate_random_matrix(n, numDrones):
 
 def generate_hardcoded_matrix(n, numDrones):
     array = [
-        [1, 2, 4, 13, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [5, 6, 7, 14, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [11, 10, 12, 15, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
@@ -236,8 +238,12 @@ spec:
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+  - from:
+    - podSelector:
         matchExpressions:
-        - {{key: app, operator: In, values: [gcs, {', '.join(['drone' + str(neighbor) for neighbor in neighbors])}]}}"""
+        - {{key: app, operator: In, values: [{', '.join(['drone' + str(neighbor) for neighbor in neighbors])}]}}"""
 
 def update_network_policies(matrix):
     policies = []
@@ -339,6 +345,9 @@ def main():
 
     controller_addr = input("Enter the controller address: ")
 
+    if args.simulation_level == 'kube':
+        gcs_ip = 'gcs-service.default'
+
     if args.startup:
         subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
         subprocess.run("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", shell=True, check=True)
@@ -384,6 +393,10 @@ spec:
           value: "{args.timeout}"
         - name: LOG_LEVEL
           value: "{args.log_level}"
+        - name: GCS_IP
+          value: "{gcs_ip}"
+        - name: DRONE_COUNT
+          value: "{args.drone_count}"
       ports:
         - name: action-port
           protocol: TCP
@@ -441,13 +454,42 @@ spec:
       image: {gcsImage}
       stdin: true
       tty: true
+      env:
+        - name: SKIP_VERIFICATION
+          value: "{args.SKIP_VERIFICATION}"
       ports:
         - name: main-port
           protocol: TCP
           containerPort: 65456
         - name: udp-test-port
           protocol: UDP
-          containerPort: 65457"""
+          containerPort: 65457
+        - name: flask-port
+          protocol: TCP
+          containerPort: 5000"""
+        
+        gcs_service = f"""apiVersion: v1
+kind: Service
+metadata:
+  name: gcs-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: gcs
+    tier: drone
+  ports:
+  - name: gcs-port
+    protocol: TCP
+    port: 80
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: flask-port
+    protocol: TCP
+    port: 5000
+    targetPort: 5000"""
         
         configMap = f"""apiVersion: v1
 kind: ConfigMap
@@ -463,7 +505,7 @@ data:
       - 192.168.1.101-192.168.1.150
 """
         
-        file.write(gcs + "\n" + delim + configMap + "\n")
+        file.write(gcs + "\n" + delim + gcs_service + "\n" + delim + configMap + "\n")
         file.close()
         
     valid_config = False
@@ -515,7 +557,7 @@ spec:
   - from:
     - podSelector:
         matchExpressions:
-        - {{key: app, operator: In, values: [gcs, {', '.join(['drone' + str(neighbor) for neighbor in neighbors])}]}}"""
+        - {{key: app, operator: In, values: [gcs, gcs-service, {', '.join(['drone' + str(neighbor) for neighbor in neighbors])}]}}"""
                         file.write(networkPolicy + "\n" + delim)
                     else:
                         networkPolicy = f"""apiVersion: networking.k8s.io/v1
@@ -531,7 +573,7 @@ spec:
   - from:
     - podSelector:
         matchLabels:
-          app: gcs"""
+          app: gcs-service"""
                         file.write(networkPolicy + "\n" + delim)
 
     file.close()

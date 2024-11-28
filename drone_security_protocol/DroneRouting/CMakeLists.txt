@@ -19,6 +19,7 @@ add_compile_options(-O3)
 file(GLOB_RECURSE LIB_SOURCES "src/*.cpp")
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
+include_directories(${PROJECT_SOURCE_DIR}/include/routing)
 include(FetchContent)
 
 # Fetch dependencies
@@ -38,7 +39,14 @@ FetchContent_Declare(
 )
 set(SPDLOG_BUILD_PIC ON CACHE INTERNAL "")
 
-FetchContent_MakeAvailable(nlohmann_json spdlog)
+FetchContent_Declare(
+  httplib
+  GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+  GIT_TAG v0.14.1
+)
+set(HTTPLIB_COMPILE ON CACHE INTERNAL "")
+
+FetchContent_MakeAvailable(nlohmann_json spdlog httplib)
 
 # OpenSSL configuration
 set(OPENSSL_ROOT_DIR "" CACHE PATH "OpenSSL root directory")
@@ -52,7 +60,7 @@ endif()
 add_library(DroneRouting SHARED ${LIB_SOURCES})
 target_include_directories(DroneRouting 
   PUBLIC 
-    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/routing
     ${nlohmann_json_SOURCE_DIR}/include
     ${spdlog_SOURCE_DIR}/include
     ${OPENSSL_INCLUDE_DIR}
@@ -62,6 +70,7 @@ target_link_libraries(DroneRouting
     PUBLIC
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    httplib::httplib
     ${OPENSSL_LIBRARIES}
 )
 

@@ -10,11 +10,19 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->port = port;
     this->nodeID = nodeID;
     this->seqNum = 0;
+
+    pki_client = std::make_unique<PKIClient>(
+        this->addr,
+        "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
+        [this](bool success) {
+            logger->info("Certificate status update: {}", success ? "valid" : "invalid");
+        }
+    );
 }
 
 void drone::clientResponseThread() {
-    const size_t MAX_QUEUE_SIZE = 200; // Maximum number of messages to queue
-    const int QUEUE_WARNING_THRESHOLD = 150; // Threshold for warning about queue size
+    const size_t MAX_QUEUE_SIZE = 200;
+    const int QUEUE_WARNING_THRESHOLD = 150;
     
     while (running) {
         json jsonData;
@@ -23,21 +31,17 @@ void drone::clientResponseThread() {
         // Scope for queue access
         {
             std::unique_lock<std::mutex> lock(queueMutex);
-            
-            // Wait for message or shutdown signal
             cv.wait(lock, [this] { return !messageQueue.empty() || !running; });
             
             if (!running && messageQueue.empty()) {
                 break;
             }
             
-            // Check queue size and log warning if approaching limit
             if (messageQueue.size() >= QUEUE_WARNING_THRESHOLD) {
                 logger->warn("Message queue size ({}) approaching maximum capacity ({})", 
                            messageQueue.size(), MAX_QUEUE_SIZE);
             }
             
-            // If queue is full, drop oldest message and log error
             if (messageQueue.size() >= MAX_QUEUE_SIZE) {
                 logger->error("Message queue full. Dropping oldest message.");
                 messageQueue.pop();
@@ -51,71 +55,177 @@ void drone::clientResponseThread() {
             }
         }
 
-        // Parse JSON outside of lock to minimize lock duration
         try {
             jsonData = json::parse(rawMessage);
+            
+            // Extract source address before validation
+            if (!jsonData.contains("srcAddr")) {
+                logger->error("Message missing srcAddr field");
+                continue;
+            }
+            std::string srcAddr = jsonData["srcAddr"].get<std::string>();
+            
+            if (!jsonData.contains("type")) {
+                logger->error("Message missing type field");
+                continue;
+            }
+            int messageType = jsonData["type"].get<int>();
+
+            // Special handling for messages that don't require validation
+            if (messageType == CERTIFICATE_VALIDATION) {
+                auto challenge_type = jsonData["challenge_type"].get<int>();
+                if (challenge_type == CHALLENGE_RESPONSE) {
+                    logger->info("Processing challenge response from {}", srcAddr);
+                    try {
+                        if (pki_client->validatePeer(jsonData)) {
+                            markSenderAsValidated(srcAddr);
+                            logger->info("Successfully validated sender {}", srcAddr);
+                        } else {
+                            logger->error("Failed to validate sender {}", srcAddr);
+                        }
+                    } catch (const std::exception& e) {
+                        logger->error("Peer validation error: {}", e.what());
+                    }
+                } else if (challenge_type == CHALLENGE_REQUEST) {
+                    logger->info("Processing challenge request from {}", srcAddr);
+                    try {
+                        ChallengeRequest request;
+                        request.deserialize(jsonData);
+                        
+                        if (pki_client->needsCertificate()) {
+                            logger->warn("Cannot respond to challenge - no valid certificate yet");
+                            continue;
+                        }
+
+                        auto cert = pki_client->getCertificate();
+                        if (cert.pem.empty()) {
+                            logger->error("No valid certificate available");
+                            continue;
+                        }
+
+                        ChallengeResponse response;
+                        response.type = CERTIFICATE_VALIDATION;
+                        response.challenge_type = CHALLENGE_RESPONSE;
+                        response.srcAddr = this->addr;
+                        response.nonce = request.nonce;
+                        response.timestamp = std::chrono::system_clock::now();
+                        response.certificate_pem = cert.pem;
+                        response.challenge_data = request.challenge_data;
+
+                        std::vector<uint8_t> data_to_sign = request.challenge_data;
+                        if (!pki_client->signMessage(data_to_sign)) {
+                            logger->error("Failed to sign challenge data");
+                            continue;
+                        }
+                        response.signature = data_to_sign;
+
+                        std::string serialized = response.serialize();
+                        if (sendData(request.srcAddr, serialized) != 0) {
+                            logger->error("Failed to send challenge response to {}", 
+                                request.srcAddr);
+                        }
+                    } catch (const std::exception& e) {
+                        logger->error("Error processing challenge request: {}", e.what());
+                    }
+                }
+            continue;
+            }
+
+            // For all other message types, check if sender is validated
+            if (!isValidatedSender(srcAddr)) {
+                if (messageType == HELLO) {
+                    logger->debug("Processing HELLO message from {}", srcAddr);
+                    try {
+                        INIT_MESSAGE init_msg;
+                        init_msg.deserialize(jsonData);
+                        
+                        std::lock_guard<std::mutex> rtLock(routingTableMutex);
+                        tesla.routingTable.insert(init_msg.srcAddr, 
+                            ROUTING_TABLE_ENTRY(init_msg.srcAddr, init_msg.srcAddr, 0, 1, 
+                                std::chrono::system_clock::now(), init_msg.hash));
+                        
+                        logger->debug("Added {} to routing table from HELLO message", init_msg.srcAddr);
+                    } catch (const std::exception& e) {
+                        logger->error("Error processing HELLO message: {}", e.what());
+                    }
+                } 
+                logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
+                try {
+                    ChallengeRequest challenge_req;
+                    challenge_req.type = CERTIFICATE_VALIDATION;
+                    challenge_req.challenge_type = CHALLENGE_REQUEST;
+                    challenge_req.srcAddr = this->addr;
+                    challenge_req.nonce = static_cast<uint32_t>(std::random_device{}());
+                    challenge_req.timestamp = std::chrono::system_clock::now();
+                    challenge_req.challenge_data = generateChallengeData();
+
+                    // Store the challenge for later verification
+                    pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
+
+                    std::string serialized = challenge_req.serialize();
+                    if (sendData(srcAddr, serialized) != 0) {
+                        logger->error("Failed to send challenge request to {}", srcAddr);
+                        continue;
+                    }
+                    
+                    logger->debug("Challenge request sent to {}", srcAddr);
+                    continue;
+                } catch (const std::exception& e) {
+                    logger->error("Failed to create challenge request: {}", e.what());
+                    continue;
+                }
+            }
+
+            // Process validated messages
+            try {
+                switch(messageType) {
+                    case ROUTE_REQUEST:
+                        logger->info("Processing validated RREQ from {}", srcAddr);
+                        routeRequestHandler(jsonData);
+                        break;
+                    case ROUTE_REPLY:
+                        logger->info("Processing validated RREP from {}", srcAddr);
+                        routeReplyHandler(jsonData);
+                        break;
+                    case ROUTE_ERROR:
+                        logger->info("Processing validated RERR from {}", srcAddr);
+                        routeErrorHandler(jsonData);
+                        break;
+                    case DATA:
+                        logger->info("Processing validated data message from {}", srcAddr);
+                        dataHandler(jsonData);
+                        break;
+                    case HELLO:
+                        logger->info("Processing validated HELLO message from {}", srcAddr);
+                        initMessageHandler(jsonData);
+                        break;
+                    case INIT_ROUTE_DISCOVERY:
+                        logger->info("Processing validated route discovery request from {}", srcAddr);
+                        {
+                            GCS_MESSAGE ctl;
+                            ctl.deserialize(jsonData);
+                            initRouteDiscovery(ctl.destAddr);
+                        }
+                        break;
+                    case VERIFY_ROUTE:
+                        logger->info("Processing validated route verification request from {}", srcAddr);
+                        verifyRouteHandler(jsonData);
+                        break;
+                    case EXIT:
+                        logger->info("Processing validated exit request from {}", srcAddr);
+                        std::exit(0);
+                        break;
+                    default:
+                        logger->warn("Unrecognized message type {} from {}", messageType, srcAddr);
+                        break;
+                }
+            } catch (const std::exception& e) {
+                logger->error("Error processing message: {}", e.what());
+            }
         } catch (const json::parse_error& e) {
             logger->error("Failed to parse message: {}", e.what());
-            continue;
         } catch (const std::exception& e) {
-            logger->error("Unexpected error parsing message: {}", e.what());
-            continue;
-        }
-
-        // Process the message
-        try {
-            switch(jsonData["type"].get<int>()) {
-                case ROUTE_REQUEST:
-                    logger->info("RREQ received");
-                    routeRequestHandler(jsonData);
-                    break;
-                case ROUTE_REPLY:
-                    logger->info("RREP received");  
-                    routeReplyHandler(jsonData);
-                    break;
-                case ROUTE_ERROR:
-                    logger->info("RERR received");
-                    routeErrorHandler(jsonData);
-                    break;
-                case DATA:
-                    logger->info("Data message received");
-                    dataHandler(jsonData);
-                    break;
-                case INIT_AUTO_DISCOVERY:
-                {
-                    logger->info("Initiating auto discovery.");
-                    GCS_MESSAGE ctl; 
-                    ctl.deserialize(jsonData);
-                    DATA_MESSAGE data; 
-                    data.data = "Hello from drone " + std::to_string(this->nodeID); 
-                    data.destAddr = ctl.destAddr; 
-                    data.srcAddr = this->addr;
-                    send(ctl.destAddr, data.serialize());
-                    break;
-                }
-                case INIT_ROUTE_DISCOVERY:
-                {
-                    logger->info("Initiating route discovery.");
-                    GCS_MESSAGE ctl;
-                    ctl.deserialize(jsonData);
-                    initRouteDiscovery(ctl.destAddr);
-                    break;
-                }
-                case EXIT:
-                    std::exit(0);
-                    break;
-                case VERIFY_ROUTE:
-                    verifyRouteHandler(jsonData);
-                    break;
-                case HELLO:
-                    initMessageHandler(jsonData);
-                    break;
-                default:
-                    logger->warn("Message type not recognized.");
-                    break;
-            }
-        } catch (const std::exception& e) {
-            logger->error("Error processing message: {}", e.what());
+            logger->error("Unexpected error: {}", e.what());
         }
     }
 
@@ -245,7 +355,7 @@ int drone::send(const string& destAddr, string msg, bool isExternal) {
         return sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg);
     }
 
-    return 1;
+    return 0;
 }
 
 void drone::processPendingRoutes() {
@@ -390,25 +500,49 @@ void drone::initRouteDiscovery(const string& destAddr){
     udpInterface.broadcast(buf);
 }
 
-void drone::initMessageHandler(json& data){
-    /*Creates a routing table entry for each authenticator & tesla msg received*/
-    {
-        std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
-        if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) return;
+void drone::initMessageHandler(json& data) {
+/*Creates a routing table entry for each authenticator & tesla msg received*/
+    std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
+    if (std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
+        return;
     }
+
     INIT_MESSAGE msg;
     msg.deserialize(data);
+
     if (msg.mode == INIT_MESSAGE::TESLA) {
         logger->debug("Inserting tesla info into routing table.");
-        this->tesla.routingTable[msg.srcAddr].setTeslaInfo(msg.hash, std::chrono::seconds(msg.disclosure_time));
+        this->tesla.routingTable[msg.srcAddr].setTeslaInfo(msg.hash, 
+            std::chrono::seconds(msg.disclosure_time));
         this->tesla.routingTable[msg.srcAddr].print();
     } else {
-        // entry(srcAddr, nextHop, seqNum, hopCount/cost(?), ttl, hash)
         logger->debug("Creating routing table entry for {}", msg.srcAddr);
-        ROUTING_TABLE_ENTRY entry(msg.srcAddr, msg.srcAddr, 0, 1, std::chrono::system_clock::now(), msg.hash);
-        std::lock_guard<std::mutex> lock(this->routingTableMutex);
-        this->tesla.routingTable.insert(msg.srcAddr, entry);
+        std::lock_guard<std::mutex> rtLock(this->routingTableMutex);
+        this->tesla.routingTable.insert(msg.srcAddr, 
+            ROUTING_TABLE_ENTRY(msg.srcAddr, msg.srcAddr, 0, 1, 
+                std::chrono::system_clock::now(), msg.hash));
     }
+}
+
+std::vector<uint8_t> drone::generateChallengeData(size_t length) {
+    std::vector<uint8_t> data(length);
+    if (RAND_bytes(data.data(), length) != 1) {
+        throw std::runtime_error("Failed to generate random challenge data");
+    }
+    return data;
+}
+
+
+bool drone::isValidatedSender(const std::string& senderAddr) {
+    std::lock_guard<std::mutex> lock(this->validationMutex);
+    return validatedNodes.find(senderAddr) != validatedNodes.end();
+}
+
+void drone::markSenderAsValidated(const std::string& senderAddr) {
+    std::lock_guard<std::mutex> lock(this->validationMutex);
+    validatedNodes.insert(senderAddr);
+    logger->info("Sender {} marked as validated", senderAddr);
 }
 
 void drone::routeRequestHandler(json& data){
@@ -824,62 +958,61 @@ void drone::neighborDiscoveryFunction(){
     }
 }
 
+std::future<void> drone::getSignal() {
+    logger->info("Future requested");
+    return init_promise.get_future();
+
+}
+
 void drone::start() {
-    logger->info("Starting drone.");
-
-    /*Temp code to make all drones start at the same time
-    Waits until the nearest 30 seconds to start code*/
-    // auto now = std::chrono::system_clock::now();
-    // auto now_sec = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    // int currSecond = now_sec.time_since_epoch().count() % 60;
-    // int secsToWait = 0;
-
-    // if (currSecond > 30) {
-    //     secsToWait = 60 - currSecond + 30;
-    // } else {
-    //     secsToWait = 30 - currSecond;
-    // }
-
-    // cout << "Waiting for " << secsToWait << " seconds." << endl;
-    // sleep(secsToWait);
-    // Reminder to set up phase 1 and phase 2 to only allow tesla init messages in phase 1
-    // Need to implement bootstrap phase
-
-    std::thread udpThread([this](){
-        this->neighborDiscoveryFunction();
-    });
-
-    std::thread processThread([this](){
-        this->clientResponseThread();
-    });
-
-    logger->info("Entering server loop");
-    this->ipcServer = new IPCServer(60137);
-    while (true) {
-        try {
-            int clientSock = this->tcpInterface.accept_connection();
-            
-            std::thread([this, clientSock](){
-                try {
-                    string msg = this->tcpInterface.receive_data(clientSock);
-                    
-                    auto now = std::chrono::system_clock::now();
-                    logger->info("Received TCP message: {}", msg);
-
-                {
-                    std::lock_guard<std::mutex> lock(queueMutex);
-                    this->messageQueue.push(msg);
-                }
-                cv.notify_one();
-                } catch (const std::exception& e) {
-                    logger->error("Error handling client: {}", e.what());
-                }
-                close(clientSock);
-            }).detach();
-        } catch (const std::exception& e) {
-            logger->error("Error accepting TCP connection: {}", e.what());  
+    logger->info("Starting drone initialization");
+    
+    try {
+        pki_client->waitForCertificate(running);
+        logger->info("Setting promise value");
+        init_promise.set_value();
+        logger->info("Promise value set");
+        
+        // Use join-able threads instead of detached
+        threads.emplace_back([this](){ neighborDiscoveryFunction(); });
+        threads.emplace_back([this](){ clientResponseThread(); });
+        
+        ipcServer = new IPCServer(60137);
+        logger->info("Entering main server loop");
+        
+        while (running) {
+            try {
+                int clientSock = tcpInterface.accept_connection();
+                threads.emplace_back([this, clientSock](){
+                    try {
+                        string msg = tcpInterface.receive_data(clientSock);
+                        logger->info("Received TCP message: {}", msg);
+                        {
+                            std::lock_guard<std::mutex> lock(queueMutex);
+                            messageQueue.push(msg);
+                        }
+                        cv.notify_one();
+                    } catch (const std::exception& e) {
+                        logger->error("Client handler error: {}", e.what());
+                    }
+                    close(clientSock);
+                });
+            } catch (const std::exception& e) {
+                logger->error("TCP accept error: {}", e.what());
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        // Join all threads before destruction
+        for (auto& thread : threads) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        
+    } catch (const std::exception& e) {
+        logger->critical("Fatal error during drone startup: {}", e.what());
+        running = false;
+        throw;
     }
 }
