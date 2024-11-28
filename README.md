@@ -1,4 +1,4 @@
-# Simulaion Startup Guide
+# Simulation Startup Guide
 
 ## Quick Start
 
