@@ -32,7 +32,7 @@ public:
     }
 
     void broadcast(const std::string& msg) {
-        int swarmSize = 15; // temp
+        int swarmSize = droneCount;
         for (int i = 1; i <= swarmSize; ++i) {
             string containerName = "drone" + std::to_string(i) + "-service.default";
             sendTo(containerName, msg, 65457);
@@ -75,6 +75,7 @@ public:
 private:
     int sock;
     struct sockaddr_in server_addr;
+    int droneCount = std::stoi(std::getenv("DRONE_COUNT"));
 };
 
 #endif

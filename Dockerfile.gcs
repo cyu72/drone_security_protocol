@@ -1,18 +1,48 @@
-FROM alpine:latest
+FROM python:3.9-alpine
 
 WORKDIR /app
 
-# RUN apk add g++ bind-tools make cmake git
-RUN apk add --no-cache \
-    python3 \
-    python3-dev
+# Install only Python and minimal dependencies
+RUN apk add --no-cache python3
 
-COPY gcs/ /app/
+# Copy only requirements first to leverage cache
+COPY gcs/requirements.txt .
 
-# RUN cmake .
+# Create and activate virtual environment, install dependencies
+RUN python3 -m venv /app/venv \
+    && . /app/venv/bin/activate \
+    && pip3 install --no-cache-dir -r requirements.txt
 
-# RUN make
+# Create certs directory with proper permissions
+RUN mkdir -p /app/certs && chmod 755 /app/certs
+
+# Copy only the required Python files
+COPY gcs/config.py \
+     gcs/crl_manager.py \
+     gcs/crypto_utils.py \
+     gcs/gcs.py \
+     gcs/main.py \
+     gcs/messages.py \
+     gcs/pki_gen.py \
+     gcs/test_cert_request.py \
+     ./
+
+# Copy existing certificates if they exist
+COPY gcs/certs/ ./certs/
+
+ENV PATH="/app/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1
 
 EXPOSE 65456
 
-CMD ["python3", "main.py"]
+# Create startup script
+COPY <<EOF /app/entrypoint.sh
+#!/bin/sh
+set -e
+/app/venv/bin/python3 pki_gen.py
+exec /app/venv/bin/python3 main.py
+EOF
+
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]
