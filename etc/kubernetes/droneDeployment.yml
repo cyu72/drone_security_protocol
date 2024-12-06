@@ -14,16 +14,28 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "1"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "1"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "8"
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "10.198.101.24"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "5"
       ports:
         - name: action-port
           protocol: TCP
@@ -76,16 +88,28 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "2"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "2"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "8"
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "10.198.101.24"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "5"
       ports:
         - name: action-port
           protocol: TCP
@@ -138,16 +162,28 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "3"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "3"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "8"
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "10.198.101.24"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "5"
       ports:
         - name: action-port
           protocol: TCP
@@ -200,16 +236,28 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "4"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "4"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "8"
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "10.198.101.24"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "5"
       ports:
         - name: action-port
           protocol: TCP
@@ -262,16 +310,28 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "5"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "5"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "8"
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "10.198.101.24"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "5"
       ports:
         - name: action-port
           protocol: TCP
@@ -311,626 +371,6 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: drone6
-  namespace: default
-  labels:
-    app: drone6
-    tier: drone
-spec:
-  hostname: drone6
-  containers: 
-    - name: drone6
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "6"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "6"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone6-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone6
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30006
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone7
-  namespace: default
-  labels:
-    app: drone7
-    tier: drone
-spec:
-  hostname: drone7
-  containers: 
-    - name: drone7
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "7"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "7"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone7-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone7
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30007
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone8
-  namespace: default
-  labels:
-    app: drone8
-    tier: drone
-spec:
-  hostname: drone8
-  containers: 
-    - name: drone8
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "8"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "8"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone8-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone8
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30008
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone9
-  namespace: default
-  labels:
-    app: drone9
-    tier: drone
-spec:
-  hostname: drone9
-  containers: 
-    - name: drone9
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "9"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "9"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone9-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone9
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30009
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone10
-  namespace: default
-  labels:
-    app: drone10
-    tier: drone
-spec:
-  hostname: drone10
-  containers: 
-    - name: drone10
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "10"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "10"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone10-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone10
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30010
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone11
-  namespace: default
-  labels:
-    app: drone11
-    tier: drone
-spec:
-  hostname: drone11
-  containers: 
-    - name: drone11
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "11"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "11"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone11-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone11
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30011
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone12
-  namespace: default
-  labels:
-    app: drone12
-    tier: drone
-spec:
-  hostname: drone12
-  containers: 
-    - name: drone12
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "12"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "12"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone12-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone12
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30012
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone13
-  namespace: default
-  labels:
-    app: drone13
-    tier: drone
-spec:
-  hostname: drone13
-  containers: 
-    - name: drone13
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "13"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "13"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone13-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone13
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30013
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone14
-  namespace: default
-  labels:
-    app: drone14
-    tier: drone
-spec:
-  hostname: drone14
-  containers: 
-    - name: drone14
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "14"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "14"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone14-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone14
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30014
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: drone15
-  namespace: default
-  labels:
-    app: drone15
-    tier: drone
-spec:
-  hostname: drone15
-  containers: 
-    - name: drone15
-      image: cyu72/drone:latest
-      stdin: true
-      tty: true
-      env:
-        - name: PARAM1
-          value: "15"
-        - name: PARAM2
-          value: "65456"
-        - name: PARAM3
-          value: "15"
-        - name: TESLA_DISCLOSE
-          value: "10"
-        - name: MAX_HOP_COUNT
-          value: "8"
-      ports:
-        - name: action-port
-          protocol: TCP
-          containerPort: 65456
-        - name: brdcst-port
-          protocol: UDP
-          containerPort: 65457
-        - name: start-port
-          protocol: TCP
-          containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: drone15-service
-spec:
-  externalTrafficPolicy: Local
-  type: LoadBalancer
-  selector:
-    app: drone15
-    tier: drone
-  ports:
-  - name: drone-port
-    protocol: TCP
-    port: 80
-    targetPort: 65456
-  - name: udp-test-port
-    protocol: UDP
-    port: 65457
-    targetPort: 65457
-  - name: start-port
-    protocol: TCP
-    port: 8080
-    targetPort: 8080 
-    nodePort: 30015
----
-apiVersion: v1
-kind: Pod
-metadata:
   name: gcs
   namespace: default
   labels:
@@ -943,6 +383,9 @@ spec:
       image: cyu72/gcs:latest
       stdin: true
       tty: true
+      env:
+        - name: SKIP_VERIFICATION
+          value: "True"
       ports:
         - name: main-port
           protocol: TCP
@@ -950,6 +393,32 @@ spec:
         - name: udp-test-port
           protocol: UDP
           containerPort: 65457
+        - name: flask-port
+          protocol: TCP
+          containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcs-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: gcs
+    tier: drone
+  ports:
+  - name: gcs-port
+    protocol: TCP
+    port: 80
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: flask-port
+    protocol: TCP
+    port: 5000
+    targetPort: 5000
 ---
 apiVersion: v1
 kind: ConfigMap

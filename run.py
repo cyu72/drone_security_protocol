@@ -375,11 +375,11 @@ spec:
       stdin: true
       tty: true
       env:
-        - name: PARAM1
+        - name: NODE_ID
           value: "{num}"
-        - name: PARAM2
+        - name: PORT
           value: "65456"
-        - name: PARAM3
+        - name: NODE_ID
           value: "{num}"
         - name: TESLA_DISCLOSE
           value: "{args.tesla_disclosure_time}"

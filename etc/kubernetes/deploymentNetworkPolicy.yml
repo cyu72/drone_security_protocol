@@ -1,51 +1,6 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-selector12
-spec:
-  podSelector:
-    matchLabels:
-      app: drone12
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone1]}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector5
-spec:
-  podSelector:
-    matchLabels:
-      app: drone5
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector7
-spec:
-  podSelector:
-    matchLabels:
-      app: drone7
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: ingress-selector1
 spec:
   podSelector:
@@ -56,22 +11,7 @@ spec:
   - from:
     - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone12]}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector10
-spec:
-  podSelector:
-    matchLabels:
-      app: drone10
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
+        - {key: app, operator: In, values: [gcs, gcs-service, drone2]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -85,68 +25,8 @@ spec:
   ingress:
   - from:
     - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector14
-spec:
-  podSelector:
-    matchLabels:
-      app: drone14
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector4
-spec:
-  podSelector:
-    matchLabels:
-      app: drone4
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector13
-spec:
-  podSelector:
-    matchLabels:
-      app: drone13
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone6]}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector6
-spec:
-  podSelector:
-    matchLabels:
-      app: drone6
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone13]}
+        - {key: app, operator: In, values: [gcs, gcs-service, drone1]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -161,65 +41,35 @@ spec:
   - from:
     - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone8]}
+        - {key: app, operator: In, values: [gcs, gcs-service, drone5, drone4]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-selector8
+  name: ingress-selector4
 spec:
   podSelector:
     matchLabels:
-      app: drone8
+      app: drone4
       tier: drone
   ingress:
   - from:
     - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone3]}
+        - {key: app, operator: In, values: [gcs, gcs-service, drone3]}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-selector9
+  name: ingress-selector5
 spec:
   podSelector:
     matchLabels:
-      app: drone9
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: gcs
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector11
-spec:
-  podSelector:
-    matchLabels:
-      app: drone11
+      app: drone5
       tier: drone
   ingress:
   - from:
     - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone15]}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: ingress-selector15
-spec:
-  podSelector:
-    matchLabels:
-      app: drone15
-      tier: drone
-  ingress:
-  - from:
-    - podSelector:
-        matchExpressions:
-        - {key: app, operator: In, values: [gcs, drone11]}
+        - {key: app, operator: In, values: [gcs, gcs-service, drone3]}
 ---

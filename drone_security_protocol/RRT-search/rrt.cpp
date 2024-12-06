@@ -2,9 +2,9 @@
 
 std::atomic<bool> server_running(true);
 
-RRT::RRT() : droneRouting(std::stoi(std::getenv("PARAM2")), std::stoi(std::getenv("PARAM3"))) {
+RRT::RRT() : droneRouting(std::stoi(std::getenv("PORT")), std::stoi(std::getenv("NODE_ID"))) {
     this->type = FOLLOWER;
-    this->drone_id = "drone" + std::string(std::getenv("PARAM1")) + "-service.default";
+    this->drone_id = "drone" + std::string(std::getenv("NODE_ID")) + "-service.default";
     this->x = 0;
     this->y = 0;
     this->controller_addr = "http://" + std::string(std::getenv("CONTROLLER_ADDR")) + ":8080";
@@ -670,7 +670,7 @@ void RRT::process_messages() {
                         if (json["leader-id"] == this->leader_id) {
                             nlohmann::json socket_data;
                             socket_data["message_type"] = MessageType::LOCATION_UPDATE;
-                            socket_data["drone-id"] = std::atoi(std::getenv("PARAM1"));
+                            socket_data["drone-id"] = std::atoi(std::getenv("NODE_ID"));
                             socket_data["x"] = this->x;
                             socket_data["y"] = this->y;
 
@@ -711,7 +711,7 @@ bool RRT::modify_coords(int x, int y) {
         int port = colonPos != std::string::npos ? std::stoi(host.substr(colonPos + 1)) : 80;
         host = colonPos != std::string::npos ? host.substr(0, colonPos) : host;
 
-        nlohmann::json data{{"drone-id", std::atoi(std::getenv("PARAM1"))}, {"x", x}, {"y", y}};
+        nlohmann::json data{{"drone-id", std::atoi(std::getenv("NODE_ID"))}, {"x", x}, {"y", y}};
         
         httplib::Client cli(host, port);
         auto res = cli.Post("/update_coords", {{"Content-Type", "application/json"}}, data.dump(), "application/json");
@@ -748,10 +748,10 @@ void RRT::get_controller_coords() {
 
         std::cout << "Grid Size: " << grid_size << std::endl;
 
-        std::string param1 = std::getenv("PARAM1") ? std::getenv("PARAM1") : "";
+        std::string NODE_ID = std::getenv("NODE_ID") ? std::getenv("NODE_ID") : "";
         std::regex pattern("drone(\\d+)");
         std::smatch matches;
-        std::string search_string = "drone" + param1 + "-service.default";
+        std::string search_string = "drone" + NODE_ID + "-service.default";
         if (std::regex_search(search_string, matches, pattern)) {
             int int_grid_representation = std::stoi(matches[1]);
 
