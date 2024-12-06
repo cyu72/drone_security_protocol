@@ -13,9 +13,9 @@ services:"""
             dockerfile: Dockerfile.drone
         image: drone:latest
         environment:
-            PARAM1: drone{num}
-            PARAM2: 65456
-            PARAM3: {num}
+            NODE_ID: drone{num}
+            PORT: 65456
+            NODE_ID: {num}
         networks:
             - AODV
     """
