@@ -435,9 +435,9 @@ void drone::verifyRouteHandler(json& data){
 }
 
 int drone::sendData(string containerName, const string& msg) {
-    logger->debug("Attempting to connect to {} on port {}", containerName, PORT_NUMBER);
+    logger->debug("Attempting to connect to {} on port {}", containerName, this->port);
     TCPInterface clientSocket(0, false); // 0 for port, false for is_server
-    if (clientSocket.connect_to(containerName, PORT_NUMBER) == -1) {
+    if (clientSocket.connect_to(containerName, this->port) == -1) {
         logger->error("Error connecting to {}", containerName);
         return -1;
     }

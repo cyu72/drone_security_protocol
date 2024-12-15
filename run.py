@@ -421,7 +421,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP

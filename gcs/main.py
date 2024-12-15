@@ -5,8 +5,7 @@ from pathlib import Path
 from messages import MESSAGE_TYPE, GCS_MESSAGE, RREQ, RREP
 from gcs import GCS
 
-# Constants
-PORT_NUMBER = 80
+PORT_NUMBER = 65456
 BRDCST_PORT = 65467
 
 class GCS_SERVER:
