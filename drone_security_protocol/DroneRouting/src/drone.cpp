@@ -11,13 +11,13 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->nodeID = nodeID;
     this->seqNum = 0;
 
-    pki_client = std::make_unique<PKIClient>(
-        this->addr,
-        "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
-        [this](bool success) {
-            logger->info("Certificate status update: {}", success ? "valid" : "invalid");
-        }
-    );
+    // pki_client = std::make_unique<PKIClient>(
+    //     this->addr,
+    //     "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
+    //     [this](bool success) {
+    //         logger->info("Certificate status update: {}", success ? "valid" : "invalid");
+    //     }
+    // );
 }
 
 void drone::clientResponseThread() {
@@ -877,14 +877,6 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
-void drone::sendDataUDP(const string& containerName, const string& msg) {
-    try {
-        udpInterface.sendTo(containerName, msg, BRDCST_PORT);
-    } catch (const std::exception& e) {
-        logger->error("Error sending UDP data: {}", e.what());
-    }
-}
-
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
@@ -928,7 +920,6 @@ void drone::neighborDiscoveryFunction(){
     for (int i = 0; i < hashIterations; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
-        // cout << "Hash: " << hash << endl;
     }
 
     auto resetTableTimer = std::chrono::steady_clock::now();
@@ -968,16 +959,16 @@ void drone::start() {
     logger->info("Starting drone initialization");
     
     try {
-        pki_client->waitForCertificate(running);
-        logger->info("Setting promise value");
-        init_promise.set_value();
-        logger->info("Promise value set");
+        // pki_client->waitForCertificate(running);
+        // logger->info("Setting promise value");
+        // init_promise.set_value();
+        // logger->info("Promise value set");
         
         // Use join-able threads instead of detached
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });
         
-        ipcServer = new IPCServer(60137);
+        // ipcServer = new IPCServer(60137);
         logger->info("Entering main server loop");
         
         while (running) {

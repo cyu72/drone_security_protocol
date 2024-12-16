@@ -61,4 +61,6 @@ private:
 
     std::unordered_map<std::string, std::vector<uint8_t>> pending_challenges;
     std::mutex challenge_mutex;
+
+    const char* GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : (std::cerr << "Error: GCS_IP environment variable not set\n", std::exit(1), "");
 };

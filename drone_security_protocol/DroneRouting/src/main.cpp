@@ -4,10 +4,10 @@
 int main() {
     try {
         auto d = std::make_unique<drone>(
-            std::stoi(std::getenv("DRONE_PORT")), 
-            std::stoi(std::getenv("DRONE_ID"))
+            std::stoi(std::getenv("PORT")), 
+            std::stoi(std::getenv("NODE_ID"))
         );
-        d->getSignal().wait();
+        // d->getSignal().wait();
         d->start();
         return 0;
     } catch (const std::exception& e) {

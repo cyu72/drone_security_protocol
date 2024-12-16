@@ -1,6 +1,8 @@
 # 1. Stop the wireless service
 sudo systemctl stop wpa_supplicant.service
 sudo killall wpa_supplicant
+sudo systemctl stop NetworkManager 
+sudo systemctl disable NetworkManager
 
 # 2. Configure the wireless interface
 # Create a new configuration file for the ad hoc network

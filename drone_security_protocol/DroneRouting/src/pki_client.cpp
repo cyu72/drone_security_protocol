@@ -52,7 +52,7 @@ bool PKIClient::requestCertificate() {
         long pem_len = BIO_get_mem_data(bio.get(), &pem_data);
 
         // Send request to GCS
-        httplib::Client client(std::getenv("GCS_IP"), 5000);
+        httplib::Client client(this->GCS_IP, 5000);
         client.set_connection_timeout(5);
         client.set_read_timeout(5);
         client.set_write_timeout(5);

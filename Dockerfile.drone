@@ -59,7 +59,7 @@ RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
 
 RUN ldconfig /usr/local/lib
 
-USER appuser
+USER root
 
 EXPOSE 65456
 
