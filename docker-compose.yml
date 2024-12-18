@@ -1,4 +1,3 @@
-version: '3'
 services:
   drone:
     image: cyu72/drone:latest
@@ -10,3 +9,13 @@ services:
     tty: true
     env_file:
       - config.env
+
+  interactive:
+    build:
+      context: .
+      dockerfile: Dockerfile.drone
+    command: ["./drone_app", "--terminal"]
+    tty: true
+    stdin_open: true
+    depends_on:
+      - drone
