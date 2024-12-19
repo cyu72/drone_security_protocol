@@ -8,7 +8,7 @@
 #include <chrono>
 #include <thread>
 
-class IPCServer {
+class ipc_client {
 private:
     int sock;
     int port;
@@ -40,7 +40,7 @@ private:
     }
 
 public:
-    IPCServer(int port) : port(port), sock(-1) {
+    ipc_client(int port) : port(port), sock(-1) {
         // Create socket
         if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
             throw std::runtime_error("Socket creation error");
@@ -64,7 +64,7 @@ public:
         }
     }
 
-    ~IPCServer() {
+    ~ipc_client() {
         if (sock != -1) {
             close(sock);
             std::cout << "Connection closed" << std::endl;

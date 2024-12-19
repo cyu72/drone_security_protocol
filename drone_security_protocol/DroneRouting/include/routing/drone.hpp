@@ -38,7 +38,8 @@
 #include <set>
 #include "hashTree.hpp"
 #include "messages.hpp"
-#include "ipcServer.hpp"
+// #include "ipc_client.hpp"
+#include "ipc_server.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "pki_client.hpp"
@@ -220,7 +221,8 @@ class drone {
 
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
-        IPCServer* ipcServer = nullptr;
+        // ipc_client* ipc_client = nullptr;
+        std::unique_ptr<IPCServer> ipc_server;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
@@ -239,6 +241,8 @@ class drone {
         void markSenderAsValidated(const std::string& sender);
         std::vector<uint8_t> generateChallengeData(size_t length = 32);
         void challengeResponseHandler(json& data);
+
+        void handleIPCMessage(const std::string& message);
 };
 
 #endif

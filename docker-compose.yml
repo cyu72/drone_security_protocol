@@ -11,9 +11,8 @@ services:
       - config.env
 
   interactive:
-    build:
-      context: .
-      dockerfile: Dockerfile.drone
+    image: cyu72/drone:latest
+    network_mode: "host"
     command: ["./drone_app", "--terminal"]
     tty: true
     stdin_open: true
