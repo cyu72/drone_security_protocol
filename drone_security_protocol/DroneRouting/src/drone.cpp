@@ -6,7 +6,7 @@ std::chrono::high_resolution_clock::time_point globalEndTime;
 drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     logger = createLogger(fmt::format("drone_{}", nodeID));
 
-    this->addr = "drone" + std::to_string(nodeID) + "-service.default";
+    this->addr = std::getenv("DRONE_IP") ? std::string(std::getenv("DRONE_IP")) : throw std::runtime_error("DRONE_IP not set");
     this->port = port;
     this->nodeID = nodeID;
     this->seqNum = 0;
