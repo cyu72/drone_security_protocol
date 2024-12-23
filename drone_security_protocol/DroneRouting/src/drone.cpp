@@ -6,18 +6,18 @@ std::chrono::high_resolution_clock::time_point globalEndTime;
 drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     logger = createLogger(fmt::format("drone_{}", nodeID));
 
-    this->addr = "drone" + std::to_string(nodeID) + "-service.default";
+    this->addr = std::getenv("DRONE_IP") ? std::string(std::getenv("DRONE_IP")) : throw std::runtime_error("DRONE_IP not set");
     this->port = port;
     this->nodeID = nodeID;
     this->seqNum = 0;
 
-    pki_client = std::make_unique<PKIClient>(
-        this->addr,
-        "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
-        [this](bool success) {
-            logger->info("Certificate status update: {}", success ? "valid" : "invalid");
-        }
-    );
+    // pki_client = std::make_unique<PKIClient>(
+    //     this->addr,
+    //     "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
+    //     [this](bool success) {
+    //         logger->info("Certificate status update: {}", success ? "valid" : "invalid");
+    //     }
+    // );
 }
 
 void drone::clientResponseThread() {
@@ -57,22 +57,21 @@ void drone::clientResponseThread() {
 
         try {
             jsonData = json::parse(rawMessage);
-            
-            // Extract source address before validation
-            if (!jsonData.contains("srcAddr")) {
-                logger->error("Message missing srcAddr field");
-                continue;
-            }
-            std::string srcAddr = jsonData["srcAddr"].get<std::string>();
-            
-            if (!jsonData.contains("type")) {
-                logger->error("Message missing type field");
-                continue;
-            }
             int messageType = jsonData["type"].get<int>();
 
             // Special handling for messages that don't require validation
             if (messageType == CERTIFICATE_VALIDATION) {
+
+                if (!jsonData.contains("srcAddr")) {
+                    logger->error("Message missing srcAddr field");
+                    continue;
+                }
+                std::string srcAddr = jsonData["srcAddr"].get<std::string>();
+                
+                if (!jsonData.contains("type")) {
+                    logger->error("Message missing type field");
+                    continue;
+                }
                 auto challenge_type = jsonData["challenge_type"].get<int>();
                 if (challenge_type == CHALLENGE_RESPONSE) {
                     logger->info("Processing challenge response from {}", srcAddr);
@@ -131,10 +130,8 @@ void drone::clientResponseThread() {
             continue;
             }
 
-            // For all other message types, check if sender is validated
-            if (!isValidatedSender(srcAddr)) {
-                if (messageType == HELLO) {
-                    logger->debug("Processing HELLO message from {}", srcAddr);
+            if (messageType == HELLO) {
+                    logger->debug("Processing HELLO message");
                     try {
                         INIT_MESSAGE init_msg;
                         init_msg.deserialize(jsonData);
@@ -149,58 +146,77 @@ void drone::clientResponseThread() {
                         logger->error("Error processing HELLO message: {}", e.what());
                     }
                 } 
-                logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
-                try {
-                    ChallengeRequest challenge_req;
-                    challenge_req.type = CERTIFICATE_VALIDATION;
-                    challenge_req.challenge_type = CHALLENGE_REQUEST;
-                    challenge_req.srcAddr = this->addr;
-                    challenge_req.nonce = static_cast<uint32_t>(std::random_device{}());
-                    challenge_req.timestamp = std::chrono::system_clock::now();
-                    challenge_req.challenge_data = generateChallengeData();
 
-                    // Store the challenge for later verification
-                    pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
+            // For all other message types, check if sender is validated
+            // if (!isValidatedSender(srcAddr)) {
+            //     if (messageType == HELLO) {
+            //         logger->debug("Processing HELLO message from {}", srcAddr);
+            //         try {
+            //             INIT_MESSAGE init_msg;
+            //             init_msg.deserialize(jsonData);
+                        
+            //             std::lock_guard<std::mutex> rtLock(routingTableMutex);
+            //             tesla.routingTable.insert(init_msg.srcAddr, 
+            //                 ROUTING_TABLE_ENTRY(init_msg.srcAddr, init_msg.srcAddr, 0, 1, 
+            //                     std::chrono::system_clock::now(), init_msg.hash));
+                        
+            //             logger->debug("Added {} to routing table from HELLO message", init_msg.srcAddr);
+            //         } catch (const std::exception& e) {
+            //             logger->error("Error processing HELLO message: {}", e.what());
+            //         }
+            //     } 
+            //     logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
+            //     try {
+            //         ChallengeRequest challenge_req;
+            //         challenge_req.type = CERTIFICATE_VALIDATION;
+            //         challenge_req.challenge_type = CHALLENGE_REQUEST;
+            //         challenge_req.srcAddr = this->addr;
+            //         challenge_req.nonce = static_cast<uint32_t>(std::random_device{}());
+            //         challenge_req.timestamp = std::chrono::system_clock::now();
+            //         challenge_req.challenge_data = generateChallengeData();
 
-                    std::string serialized = challenge_req.serialize();
-                    if (sendData(srcAddr, serialized) != 0) {
-                        logger->error("Failed to send challenge request to {}", srcAddr);
-                        continue;
-                    }
+            //         // Store the challenge for later verification
+            //         pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
+
+            //         std::string serialized = challenge_req.serialize();
+            //         if (sendData(srcAddr, serialized) != 0) {
+            //             logger->error("Failed to send challenge request to {}", srcAddr);
+            //             continue;
+            //         }
                     
-                    logger->debug("Challenge request sent to {}", srcAddr);
-                    continue;
-                } catch (const std::exception& e) {
-                    logger->error("Failed to create challenge request: {}", e.what());
-                    continue;
-                }
-            }
+            //         logger->debug("Challenge request sent to {}", srcAddr);
+            //         continue;
+            //     } catch (const std::exception& e) {
+            //         logger->error("Failed to create challenge request: {}", e.what());
+            //         continue;
+            //     }
+            // }
 
             // Process validated messages
             try {
                 switch(messageType) {
                     case ROUTE_REQUEST:
-                        logger->info("Processing validated RREQ from {}", srcAddr);
+                        logger->info("Processing validated RREQ");
                         routeRequestHandler(jsonData);
                         break;
                     case ROUTE_REPLY:
-                        logger->info("Processing validated RREP from {}", srcAddr);
+                        logger->info("Processing validated RREP");
                         routeReplyHandler(jsonData);
                         break;
                     case ROUTE_ERROR:
-                        logger->info("Processing validated RERR from {}", srcAddr);
+                        logger->info("Processing validated RERR");
                         routeErrorHandler(jsonData);
                         break;
                     case DATA:
-                        logger->info("Processing validated data message from {}", srcAddr);
+                        logger->info("Processing validated data message");
                         dataHandler(jsonData);
                         break;
                     case HELLO:
-                        logger->info("Processing validated HELLO message from {}", srcAddr);
+                        logger->info("Processing validated HELLO message");
                         initMessageHandler(jsonData);
                         break;
                     case INIT_ROUTE_DISCOVERY:
-                        logger->info("Processing validated route discovery request from {}", srcAddr);
+                        logger->info("Processing validated route discovery request");
                         {
                             GCS_MESSAGE ctl;
                             ctl.deserialize(jsonData);
@@ -208,15 +224,15 @@ void drone::clientResponseThread() {
                         }
                         break;
                     case VERIFY_ROUTE:
-                        logger->info("Processing validated route verification request from {}", srcAddr);
+                        logger->info("Processing validated route verification request");
                         verifyRouteHandler(jsonData);
                         break;
                     case EXIT:
-                        logger->info("Processing validated exit request from {}", srcAddr);
+                        logger->info("Processing validated exit request");
                         std::exit(0);
                         break;
                     default:
-                        logger->warn("Unrecognized message type {} from {}", messageType, srcAddr);
+                        logger->warn("Unrecognized message type {}", messageType);
                         break;
                 }
             } catch (const std::exception& e) {
@@ -241,30 +257,37 @@ void drone::dataHandler(json& data){
     DATA_MESSAGE msg;
     msg.deserialize(data);
 
-    if (msg.isBroadcast || (msg.destAddr == this->addr)) {
-        if (this->ipcServer) {
-            this->ipcServer->sendData(msg.data + "\n");
-        } else {
-            logger->error("IPC Server not initialized");
+    /*Place below block in else statement if passing up to an application layer running the ipc*/
+    // if (msg.isBroadcast || (msg.destAddr == this->addr)) {
+    //     if (this->ipc_client) {
+    //         this->ipc_client->sendData(msg.data + "\n");
+    //     } else {
+    //         logger->error("IPC Server not initialized");
+    //     }
+    // } else {}
+
+    logger->debug("Forwarding data to next hop");
+    if (this->tesla.routingTable.find(msg.destAddr)) {
+        logger->debug("Route found, sending data");
+
+        if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
+            RERR rerr;
+            // Attach information here for RERR
+            TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
+            rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+            rerr.addRetAddr(msg.srcAddr);
+
+            sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
         }
     } else {
-        logger->debug("Forwarding data to next hop");
-        if (this->tesla.routingTable.find(msg.destAddr)) {
-            logger->debug("Route found, sending data");
-
-            if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
-                RERR rerr;
-                // Attach information here for RERR
-                TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
-                rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
-                rerr.addRetAddr(msg.srcAddr);
-
-                sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
-            }
-        } else {
-            // we also send a route error?
-        }
+        // we also send a route error?
     }
+}
+
+void drone::handleIPCMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    messageQueue.push(message);
+    cv.notify_one();
 }
 
 void drone::broadcast(const std::string& msg) {
@@ -435,9 +458,9 @@ void drone::verifyRouteHandler(json& data){
 }
 
 int drone::sendData(string containerName, const string& msg) {
-    logger->debug("Attempting to connect to {} on port {}", containerName, PORT_NUMBER);
+    logger->debug("Attempting to connect to {} on port {}", containerName, this->port);
     TCPInterface clientSocket(0, false); // 0 for port, false for is_server
-    if (clientSocket.connect_to(containerName, PORT_NUMBER) == -1) {
+    if (clientSocket.connect_to(containerName, this->port) == -1) {
         logger->error("Error connecting to {}", containerName);
         return -1;
     }
@@ -877,14 +900,6 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
-void drone::sendDataUDP(const string& containerName, const string& msg) {
-    try {
-        udpInterface.sendTo(containerName, msg, BRDCST_PORT);
-    } catch (const std::exception& e) {
-        logger->error("Error sending UDP data: {}", e.what());
-    }
-}
-
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
@@ -928,7 +943,6 @@ void drone::neighborDiscoveryFunction(){
     for (int i = 0; i < hashIterations; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
-        // cout << "Hash: " << hash << endl;
     }
 
     auto resetTableTimer = std::chrono::steady_clock::now();
@@ -968,16 +982,22 @@ void drone::start() {
     logger->info("Starting drone initialization");
     
     try {
-        pki_client->waitForCertificate(running);
-        logger->info("Setting promise value");
-        init_promise.set_value();
-        logger->info("Promise value set");
+        // pki_client->waitForCertificate(running);
+        // logger->info("Setting promise value");
+        // init_promise.set_value();
+        // logger->info("Promise value set");
         
         // Use join-able threads instead of detached
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });
         
-        ipcServer = new IPCServer(60137);
+        // ipc_client = new ipc_client(60137);
+        ipc_server = std::make_unique<IPCServer>(60137, 
+            [this](const std::string& msg) { 
+                this->handleIPCMessage(msg); 
+            }
+        );
+        ipc_server->start();
         logger->info("Entering main server loop");
         
         while (running) {
@@ -1003,7 +1023,9 @@ void drone::start() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         
-        // Join all threads before destruction
+        if (ipc_server) {
+            ipc_server->stop();
+        }
         for (auto& thread : threads) {
             if (thread.joinable()) {
                 thread.join();

@@ -1,53 +1,21 @@
-# Build stage
 FROM alpine:latest AS builder
 
 # Install build dependencies
 RUN apk add --no-cache \
-    g++ \
-    make \
-    cmake \
-    ninja \
-    ccache \
-    protobuf \
-    protobuf-dev \
-    git \
-    openssl-dev \
-    python3 \
-    python3-dev
+    g++ make cmake ninja ccache protobuf protobuf-dev \
+    git openssl-dev python3 python3-dev
 
-# Set up ccache
 ENV CCACHE_DIR=/ccache
 RUN mkdir -p /ccache
 
-# First copy only CMakeLists.txt files to leverage Docker cache
 WORKDIR /app/drone_security_protocol/DroneRouting
 COPY drone_security_protocol/DroneRouting/CMakeLists.txt .
-COPY drone_security_protocol/DroneRouting/config.env ./config.env
 
-# Load environment variables early so they're available during build
-# Using proper shell syntax to ensure variables are expanded
-RUN set -a && . ./config.env && set +a && env > /app/runtime.env
-
-# Now copy source files which change more frequently
+# Copy source files
 COPY drone_security_protocol/DroneRouting/src ./src
 COPY drone_security_protocol/DroneRouting/include ./include
 
-# Build DroneRouting library
-RUN mkdir build && cd build && \
-    cmake -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-          .. && \
-    ninja -j$(nproc)
-
-# Similar pattern for RRT-search: CMakeLists first
-WORKDIR /app/drone_security_protocol/RRT-search
-COPY drone_security_protocol/RRT-search/CMakeLists.txt .
-
-# Then source files
-COPY drone_security_protocol/RRT-search/rrt.cpp .
-COPY drone_security_protocol/RRT-search/rrt.hpp .
-
+# Build both library and executable
 RUN mkdir build && cd build && \
     cmake -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
@@ -58,50 +26,25 @@ RUN mkdir build && cd build && \
 # Runtime stage
 FROM alpine:latest
 
-# Install only necessary runtime dependencies
-RUN apk add --no-cache \
-    libstdc++ \
-    openssl \
-    python3 \
-    libcurl
+# Install runtime dependencies
+RUN apk add --no-cache libstdc++ openssl python3 libcurl
 
-# Create app directory
 WORKDIR /app
-
-# Copy both config files
-COPY --from=builder /app/drone_security_protocol/DroneRouting/config.env /app/config.env
-COPY --from=builder /app/runtime.env /app/runtime.env
 
 # Copy built artifacts
 COPY --from=builder /app/drone_security_protocol/DroneRouting/build/libdrone_routing.so /usr/local/lib/
-COPY --from=builder /app/drone_security_protocol/RRT-search/build/bin/rrt /app/rrt
+COPY --from=builder /app/drone_security_protocol/DroneRouting/build/drone_app /app/drone_app
 COPY --from=builder /usr/local/lib/libcpr.so* /usr/local/lib/
 
-# Set up environment
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
-# Create and use non-root user for security
+# Security setup
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Create enhanced entrypoint script that loads both env files
-RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
-    echo 'set -a' >> /app/entrypoint.sh && \
-    echo '# Load runtime environment' >> /app/entrypoint.sh && \
-    echo '. /app/runtime.env' >> /app/entrypoint.sh && \
-    echo '# Load config environment' >> /app/entrypoint.sh && \
-    echo '. /app/config.env' >> /app/entrypoint.sh && \
-    echo 'set +a' >> /app/entrypoint.sh && \
-    echo 'exec "$@"' >> /app/entrypoint.sh && \
-    chmod +x /app/entrypoint.sh && \
-    chown appuser:appgroup /app/entrypoint.sh
-
-# Update the dynamic linker run-time bindings
 RUN ldconfig /usr/local/lib
 
-# Switch to non-root user
-USER appuser
+USER root
 
 EXPOSE 65456
 
-ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["/app/rrt"]
+CMD ["/app/drone_app"]

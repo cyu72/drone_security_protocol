@@ -49,26 +49,22 @@ struct MESSAGE {
     virtual ~MESSAGE() = default;
 };
 
-struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
-    std::string srcAddr;
+struct GCS_MESSAGE : public MESSAGE { // Repurposed to request data to be sent from current node via IPC terminal to other nodes
     std::string destAddr;
 
     GCS_MESSAGE() {
         this->type = DATA;
-        this->srcAddr = "NILL";
         this->destAddr = "NILL";
     }
 
-    GCS_MESSAGE(std::string srcAddr, std::string destAddr, std::string msg) {
+    GCS_MESSAGE(std::string destAddr, std::string msg) {
         this->type = DATA;
-        this->srcAddr = srcAddr;
         this->destAddr = destAddr;
     }
 
     std::string serialize() const override {
         json j = json{
             {"type", this->type},
-            {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
         };
         return j.dump();
@@ -76,7 +72,6 @@ struct GCS_MESSAGE : public MESSAGE { // used as a means to send gcs msgs
 
     void deserialize(json& j) override {
         this->type = j["type"];
-        this->srcAddr = j["srcAddr"];
         this->destAddr = j["destAddr"];
     }
 };
