@@ -22,7 +22,6 @@ parser.add_argument('--startup', action='store_true', help='Complete initial sta
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=7, help='Maximium number of nodes we can route messages through')
 parser.add_argument('--max_seq_count', type=int, default=50, help='Maximium number of sequence numbers we can store')
-parser.add_argument('--stable', action='store_true', help='Use stable version of the drone image')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
 parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='hardcoded', help='Choose between random or hardcoded grid')
@@ -340,8 +339,8 @@ def main():
     global matrix, processes, threads
 
     droneNum = args.drone_count
-    droneImage = "cyu72/drone:stable" if args.stable else "cyu72/drone:latest"
-    gcsImage = "cyu72/gcs:latest"
+    droneImage = "cyu72/drone:simulation"
+    gcsImage = "cyu72/gcs:simulation"
 
     controller_addr = input("Enter the controller address: ")
 
