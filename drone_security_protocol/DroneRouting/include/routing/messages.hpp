@@ -35,6 +35,7 @@ enum MESSAGE_TYPE {
     ROUTE_ERROR,
     DATA,
     CERTIFICATE_VALIDATION,
+    LEAVE_NOTIFICATION,
     INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
     VERIFY_ROUTE,
     HELLO, // Broadcast Msg
@@ -533,12 +534,9 @@ struct ChallengeResponse : public ChallengeMessage {
             }
             
             try {
-                // Remove any whitespace or newlines
                 std::string cleaned_input = encoded;
                 cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
                     [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
-                
-                // Add padding if needed
                 switch (cleaned_input.length() % 4) {
                     case 2: cleaned_input += "=="; break;
                     case 3: cleaned_input += "="; break;
@@ -638,14 +636,12 @@ struct ChallengeRequest : public ChallengeMessage {
             return;
         }
         
-        // Remove whitespace and null bytes
         encoded_challenge.erase(
             std::remove_if(encoded_challenge.begin(), encoded_challenge.end(),
                 [](char c) { return std::isspace(c) || c == '\0'; }),
             encoded_challenge.end()
         );
         
-        // Add padding if needed
         switch (encoded_challenge.length() % 4) {
             case 2: encoded_challenge += "=="; break;
             case 3: encoded_challenge += "="; break;
@@ -670,6 +666,117 @@ struct ChallengeRequest : public ChallengeMessage {
         
         decoded_data.resize(decoded_length);
         challenge_data = std::move(decoded_data);
+    }
+};
+
+struct LeaveMessage : public MESSAGE {
+    std::string srcAddr;  // Following convention from other messages
+    std::chrono::system_clock::time_point timestamp;
+    std::vector<uint8_t> signature;
+    std::string certificate_pem;  // Including cert like ChallengeResponse
+    
+    LeaveMessage() {
+        this->type = LEAVE_NOTIFICATION;
+    }
+    
+    string serialize() const override {
+        json j = json::parse(MESSAGE::serialize());
+        j["srcAddr"] = srcAddr;
+        j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+            timestamp.time_since_epoch()).count();
+        
+        auto encode_base64 = [](const std::vector<uint8_t>& data) -> std::string {
+            if (data.empty()) {
+                return "";
+            }
+            
+            BIO* bio = BIO_new(BIO_s_mem());
+            BIO* b64 = BIO_new(BIO_f_base64());
+            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+            bio = BIO_push(b64, bio);
+            
+            BIO_write(bio, data.data(), data.size());
+            BIO_flush(bio);
+            
+            char* encoded_data;
+            long data_len = BIO_get_mem_data(bio, &encoded_data);
+            std::string result(encoded_data, data_len);
+            
+            BIO_free_all(bio);
+            return result;
+        };
+        
+        j["signature"] = encode_base64(signature);
+        j["certificate_pem"] = certificate_pem;
+        
+        return j.dump();
+    }
+    
+    void deserialize(json& j) override {
+        MESSAGE::deserialize(j);
+        srcAddr = j["srcAddr"];
+        timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
+        certificate_pem = j["certificate_pem"];
+        
+        auto decode_base64 = [](const std::string& encoded) -> std::vector<uint8_t> {
+            if (encoded.empty()) {
+                return std::vector<uint8_t>();
+            }
+            
+            try {
+                std::string cleaned_input = encoded;
+                cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
+                    [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
+                
+                switch (cleaned_input.length() % 4) {
+                    case 2: cleaned_input += "=="; break;
+                    case 3: cleaned_input += "="; break;
+                }
+                
+                BIO* bio = BIO_new_mem_buf(cleaned_input.data(), cleaned_input.size());
+                if (!bio) {
+                    throw std::runtime_error("Failed to create memory BIO");
+                }
+                
+                BIO* b64 = BIO_new(BIO_f_base64());
+                if (!b64) {
+                    BIO_free(bio);
+                    throw std::runtime_error("Failed to create base64 BIO");
+                }
+                
+                BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+                bio = BIO_push(b64, bio);
+                
+                std::vector<uint8_t> decoded((cleaned_input.size() * 3) / 4);
+                if (decoded.empty()) {
+                    decoded.resize(1);
+                }
+                
+                int decoded_length = BIO_read(bio, decoded.data(), decoded.size());
+                BIO_free_all(bio);
+                
+                if (decoded_length <= 0) {
+                    if (cleaned_input.empty()) {
+                        return std::vector<uint8_t>();
+                    }
+                    throw std::runtime_error("BIO_read failed with input: " + cleaned_input);
+                }
+                
+                decoded.resize(decoded_length);
+                return decoded;
+                
+            } catch (const std::exception& e) {
+                throw std::runtime_error(std::string("Base64 decode error: ") + e.what());
+            }
+        };
+        
+        try {
+            const auto& sig_str = j["signature"].get<std::string>();
+            signature = decode_base64(sig_str);
+        } catch (const std::exception& e) {
+            throw std::runtime_error(std::string("Signature decode error: ") + e.what());
+        }
     }
 };
 

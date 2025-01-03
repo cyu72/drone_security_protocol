@@ -207,6 +207,10 @@ void drone::clientResponseThread() {
                             initRouteDiscovery(ctl.destAddr);
                         }
                         break;
+                    case LEAVE_NOTIFICATION:
+                        logger->info("Processing validated leave notification from {}", srcAddr);
+                        leaveHandler(jsonData);
+                        break;
                     case VERIFY_ROUTE:
                         logger->info("Processing validated route verification request from {}", srcAddr);
                         verifyRouteHandler(jsonData);
@@ -233,6 +237,36 @@ void drone::clientResponseThread() {
     std::lock_guard<std::mutex> lock(queueMutex);
     while (!messageQueue.empty()) {
         messageQueue.pop();
+    }
+}
+
+void drone::leaveHandler(json& data) {
+    try {
+        LeaveMessage leave_msg;
+        leave_msg.deserialize(data);
+        
+        auto now = std::chrono::system_clock::now();
+        auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(
+            now - leave_msg.timestamp).count();
+        if (std::abs(time_diff) > 30) {
+            logger->warn("Received expired leave notification from {}", leave_msg.srcAddr);
+            return;
+        }
+        
+        {
+            std::lock_guard<std::mutex> lock(routingTableMutex);
+            tesla.routingTable.cleanup();
+        }
+        
+        {
+            std::lock_guard<std::mutex> lock(validationMutex);
+            validatedNodes.erase(leave_msg.srcAddr);
+        }
+        
+        logger->info("Node {} has left the swarm", leave_msg.srcAddr);
+        
+    } catch (const std::exception& e) {
+        logger->error("Error processing leave notification: {}", e.what());
     }
 }
 
@@ -956,6 +990,46 @@ void drone::neighborDiscoveryFunction(){
             break;
         }
     }
+}
+
+void drone::leaveSwarm() {
+    LeaveMessage leave_msg;
+    leave_msg.srcAddr = this->addr;
+    leave_msg.timestamp = std::chrono::system_clock::now();
+    
+    auto cert = pki_client->getCertificate();
+    if (cert.pem.empty()) {
+        logger->error("No valid certificate available for leave message");
+        return;
+    }
+    leave_msg.certificate_pem = cert.pem;
+    
+    std::string msg_data = leave_msg.srcAddr + 
+        std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+            leave_msg.timestamp.time_since_epoch()).count());
+    
+    std::vector<uint8_t> data_to_sign(msg_data.begin(), msg_data.end());
+    if (!pki_client->signMessage(data_to_sign)) {
+        logger->error("Failed to sign leave message");
+        return;
+    }
+    leave_msg.signature = data_to_sign;
+    
+    logger->info("Broadcasting leave notification");
+    udpInterface.broadcast(leave_msg.serialize());
+
+    {
+        std::lock_guard<std::mutex> lock(validationMutex);
+        validatedNodes.clear();
+    }
+    
+    {
+        std::lock_guard<std::mutex> lock(routingTableMutex);
+        tesla.routingTable.cleanup();
+    }
+    
+    // Set running to false to begin shutdown
+    // running = false;
 }
 
 std::future<void> drone::getSignal() {
