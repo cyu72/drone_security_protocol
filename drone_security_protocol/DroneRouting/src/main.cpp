@@ -9,6 +9,7 @@ void runTerminal() {
                   << "Available commands:\n"
                   << "  discover <addr> - Initiate route discovery\n"
                   << "  verify         - Verify current routes\n"
+                  << "  leave          - Leave the swarm\n"
                   << "  (Ctrl+D to exit)\n\n";
 
         std::string input;
@@ -32,9 +33,10 @@ void runTerminal() {
                 } 
                 else if (command == "verify") {
                     msg = {{"type", VERIFY_ROUTE}};
-                }
-                else {
-                    std::cout << "Unknown command. Use 'discover <addr>' or 'verify'\n";
+                } else if (command == "leave") {
+                    msg = {{"type", INIT_LEAVE}};
+                } else {
+                    std::cout << "Unknown command. Use 'discover <addr>' or 'verify' or 'leave'\n";
                     continue;
                 }
 
