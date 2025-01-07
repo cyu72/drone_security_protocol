@@ -213,6 +213,8 @@ class drone {
         void neighborDiscoveryFunction();
         void neighborDiscoveryHelper();
         void processPendingRoutes();
+        void leaveSwarm();
+        void leaveHandler(json& data);
         string getHashFromChain(unsigned long seqNum, unsigned long hopCount);
 
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through

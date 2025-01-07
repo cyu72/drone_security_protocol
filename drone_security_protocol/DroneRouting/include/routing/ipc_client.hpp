@@ -54,7 +54,6 @@ public:
             throw std::runtime_error("Failed to send data");
         }
 
-        // Wait for acknowledgment
         char buffer[1024] = {0};
         int bytes_read = read(sock, buffer, sizeof(buffer)-1);
         if (bytes_read <= 0) {

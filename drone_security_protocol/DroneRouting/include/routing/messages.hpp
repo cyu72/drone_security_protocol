@@ -35,10 +35,11 @@ enum MESSAGE_TYPE {
     ROUTE_ERROR,
     DATA,
     CERTIFICATE_VALIDATION,
+    LEAVE_NOTIFICATION,
     INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
     VERIFY_ROUTE,
     HELLO, // Broadcast Msg
-    INIT_AUTO_DISCOVERY,
+    INIT_LEAVE,
     EXIT
 };
 
@@ -528,12 +529,10 @@ struct ChallengeResponse : public ChallengeMessage {
             }
             
             try {
-                // Remove any whitespace or newlines
                 std::string cleaned_input = encoded;
                 cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
                     [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
                 
-                // Add padding if needed
                 switch (cleaned_input.length() % 4) {
                     case 2: cleaned_input += "=="; break;
                     case 3: cleaned_input += "="; break;
@@ -633,14 +632,12 @@ struct ChallengeRequest : public ChallengeMessage {
             return;
         }
         
-        // Remove whitespace and null bytes
         encoded_challenge.erase(
             std::remove_if(encoded_challenge.begin(), encoded_challenge.end(),
                 [](char c) { return std::isspace(c) || c == '\0'; }),
             encoded_challenge.end()
         );
         
-        // Add padding if needed
         switch (encoded_challenge.length() % 4) {
             case 2: encoded_challenge += "=="; break;
             case 3: encoded_challenge += "="; break;
@@ -665,6 +662,85 @@ struct ChallengeRequest : public ChallengeMessage {
         
         decoded_data.resize(decoded_length);
         challenge_data = std::move(decoded_data);
+    }
+};
+
+struct LeaveMessage : public MESSAGE {
+    std::string srcAddr;
+    std::chrono::system_clock::time_point timestamp;
+    std::vector<uint8_t> signature;
+    std::string certificate_pem;
+    
+    LeaveMessage() {
+        this->type = LEAVE_NOTIFICATION;
+    }
+    
+    string serialize() const override {
+        json j;
+        j["type"] = type;
+        j["srcAddr"] = srcAddr;
+        j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+            timestamp.time_since_epoch()).count();
+        
+        if (!signature.empty()) {
+            BIO* bio = BIO_new(BIO_s_mem());
+            BIO* b64 = BIO_new(BIO_f_base64());
+            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+            bio = BIO_push(b64, bio);
+            
+            BIO_write(bio, signature.data(), signature.size());
+            BIO_flush(bio);
+            
+            char* encoded_data;
+            long data_len = BIO_get_mem_data(bio, &encoded_data);
+            std::string encoded_sig(encoded_data, data_len);
+            
+            BIO_free_all(bio);
+            j["signature"] = encoded_sig;
+        } else {
+            j["signature"] = "";
+        }
+        
+        j["certificate_pem"] = certificate_pem;
+        
+        return j.dump();
+    }
+    
+    void deserialize(json& j) override {
+        type = j["type"];
+        srcAddr = j["srcAddr"];
+        timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
+        certificate_pem = j["certificate_pem"];
+        
+        std::string encoded_sig = j["signature"].get<std::string>();
+        if (!encoded_sig.empty()) {
+            encoded_sig.erase(std::remove_if(encoded_sig.begin(), encoded_sig.end(), 
+                [](char c) { return std::isspace(c) || c == '\0'; }), encoded_sig.end());
+            
+            switch (encoded_sig.length() % 4) {
+                case 2: encoded_sig += "=="; break;
+                case 3: encoded_sig += "="; break;
+            }
+            
+            BIO* bio = BIO_new_mem_buf(encoded_sig.data(), encoded_sig.size());
+            BIO* b64 = BIO_new(BIO_f_base64());
+            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+            bio = BIO_push(b64, bio);
+            
+            std::vector<uint8_t> decoded((encoded_sig.size() * 3) / 4);
+            if (decoded.empty()) {
+                decoded.resize(1);
+            }
+            
+            int decoded_length = BIO_read(bio, decoded.data(), decoded.size());
+            BIO_free_all(bio);
+            
+            if (decoded_length > 0) {
+                decoded.resize(decoded_length);
+                signature = std::move(decoded);
+            }
+        }
     }
 };
 
