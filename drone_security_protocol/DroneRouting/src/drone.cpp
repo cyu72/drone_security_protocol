@@ -212,7 +212,6 @@ void drone::clientResponseThread() {
                         dataHandler(jsonData);
                         break;
                     case HELLO:
-                        logger->info("Processing validated HELLO message");
                         initMessageHandler(jsonData);
                         break;
                     case INIT_ROUTE_DISCOVERY:
@@ -317,8 +316,6 @@ void drone::dataHandler(json& data){
 
             sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
         }
-    } else {
-        // we also send a route error?
     }
 }
 
@@ -569,6 +566,7 @@ void drone::initMessageHandler(json& data) {
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
+    logger->info("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
 
     if (msg.mode == INIT_MESSAGE::TESLA) {
         logger->debug("Inserting tesla info into routing table.");
@@ -612,6 +610,8 @@ void drone::routeRequestHandler(json& data){
     3a) Calculate hash based on hopCount * seqNum (comparison with routing table is optional because of hash tree)
     3b) Calculate hashTree where lastElement = H[droneName || hash] (hash = hashIterations * baseHash) (hashIterations = hopCount * seqNum)
     */
+    auto start_time = std::chrono::high_resolution_clock::now();
+    size_t bytes_sent = 0;  // Track total bytes sent
     logger->debug("=== Starting RREQ Handler ===");
     try {
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
@@ -711,6 +711,7 @@ void drone::routeRequestHandler(json& data){
 
                 string buf = rrep.serialize();
                 logger->info("Sending RREP: {}", buf);
+                bytes_sent += buf.size();
 
                 if (msg.hopCount == 1) {
                     sendData(rrep.destAddr, buf);
@@ -759,6 +760,7 @@ void drone::routeRequestHandler(json& data){
 
                 msg.recvAddr = this->addr;
                 string buf = msg.serialize();
+                bytes_sent += buf.size();
                 logger->debug("Broadcasting updated RREQ");
                 udpInterface.broadcast(buf);
             } catch (const std::exception& e) {
@@ -766,13 +768,20 @@ void drone::routeRequestHandler(json& data){
                 return;
             }
         }
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        
+        logger->info("RREQ metrics - Processing time: {} μs, Bytes sent: {}, Source Address: {}, Sequence Number: {}", 
+                    duration.count(), bytes_sent, msg.srcAddr, msg.srcSeqNum);
+        logger->debug("=== Finished RREQ Handler ===");
     } catch (const std::exception& e) {
         logger->error("Critical error in routeRequestHandler: {}", e.what());
     }
-    logger->debug("=== Finished RREQ Handler ===");
 }
 
 void drone::routeReplyHandler(json& data) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    size_t bytes_sent = 0;  // Track total bytes sent
     logger->debug("=== Starting RREP Handler ===");
     try {
         logger->debug("Handling RREP payload: {}", data.dump());
@@ -890,6 +899,7 @@ void drone::routeReplyHandler(json& data) {
                 );
 
                 string buf = msg.serialize();
+                bytes_sent += buf.size();
                 auto nextHop = this->tesla.routingTable.get(msg.destAddr)->intermediateAddr;
                 logger->info("Forwarding RREP to next hop: {}", nextHop);
                 sendData(nextHop, buf);
@@ -899,10 +909,15 @@ void drone::routeReplyHandler(json& data) {
                 return;
             }
         }
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+        
+        logger->info("RREP metrics - Processing time: {} μs, Bytes sent: {}, Source Address: {}, Sequence Number: {}", 
+                    duration.count(), bytes_sent, msg.srcAddr, msg.srcSeqNum);
+        logger->debug("=== Finished RREP Handler ===");
     } catch (const std::exception& e) {
         logger->error("Critical error in routeReplyHandler: {}", e.what());
     }
-    logger->debug("=== Finished RREP Handler ===");
 }
 
 string drone::generate_nonce(const size_t length) {
@@ -998,7 +1013,7 @@ void drone::neighborDiscoveryFunction(){
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
                 this->messageQueue.push(receivedMsg);
-                logger->info("Received message: {}", receivedMsg);
+                logger->debug("Received message: {}", receivedMsg);
             }
             cv.notify_one();
         } catch (const std::exception& e) {
