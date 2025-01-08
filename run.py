@@ -371,6 +371,7 @@ spec:
   containers: 
     - name: drone{num}
       image: {droneImage}
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -451,6 +452,7 @@ spec:
   containers: 
     - name: gcs
       image: {gcsImage}
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
