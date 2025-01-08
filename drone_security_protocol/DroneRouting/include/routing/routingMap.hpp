@@ -76,6 +76,10 @@ public:
         }
 
     }
+
+    void remove(const Key& key) {
+        map.erase(key);
+    }
  
 
 private:

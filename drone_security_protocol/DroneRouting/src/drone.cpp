@@ -472,7 +472,9 @@ void drone::routeErrorHandler(json& data){
             TESLA::nonce_data data = this->tesla.getNonceData(msg.retAddr);
             msg.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
             sendData(this->tesla.routingTable.get(msg.retAddr)->intermediateAddr, msg.serialize());
-            // TODO: Remove entry from table
+            
+            std::lock_guard<std::mutex> rtLock(routingTableMutex); // remove entry from routing table
+            this->tesla.routingTable.remove(msg.retAddr);
         } catch (std::runtime_error& e) {
             logger->debug("End of backpropagation reached.");
         }
