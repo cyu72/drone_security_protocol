@@ -509,7 +509,7 @@ int drone::sendData(string containerName, const string& msg) {
 }
 
 string drone::getHashFromChain(unsigned long seqNum, unsigned long hopCount) {
-    size_t index = (seqNum - 1) * this->max_hop_count + hopCount;
+    size_t index = ((seqNum - 1) * this->max_hop_count) + hopCount + 1;
     
     if (index >= hashChainCache.size()) {
         logger->error("Hash chain access out of bounds: {} >= {}", 
@@ -536,7 +536,7 @@ void drone::initRouteDiscovery(const string& destAddr){
             try {
             msg->hash = (msg->srcSeqNum == 1) ? 
                 getHashFromChain(1, 1) : 
-                getHashFromChain(msg->srcSeqNum - 1, 1);
+                getHashFromChain(msg->srcSeqNum, 1);
         } catch (const std::out_of_range& e) {
             logger->error("Hash chain access error: {}", e.what());
             return;
@@ -566,7 +566,7 @@ void drone::initMessageHandler(json& data) {
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
-    logger->info("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
+    logger->debug("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
 
     if (msg.mode == INIT_MESSAGE::TESLA) {
         logger->debug("Inserting tesla info into routing table.");
@@ -574,7 +574,6 @@ void drone::initMessageHandler(json& data) {
             std::chrono::seconds(msg.disclosure_time));
         this->tesla.routingTable[msg.srcAddr].print();
     } else {
-        logger->debug("Creating routing table entry for {}", msg.srcAddr);
         std::lock_guard<std::mutex> rtLock(this->routingTableMutex);
         this->tesla.routingTable.insert(msg.srcAddr, 
             ROUTING_TABLE_ENTRY(msg.srcAddr, msg.srcAddr, 0, 1, 
@@ -642,18 +641,18 @@ void drone::routeRequestHandler(json& data){
             }
 
             string hashRes = msg.hash;
-            int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+            int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 2 + msg.hopCount;
             
-            logger->debug("Calculating hash iterations: {}", hashIterations);
+            logger->info("Calculating hash iterations: {}", hashIterations);
             for (int i = 1; i < hashIterations; i++) {
                 hashRes = sha256(hashRes);
-                logger->trace("Hash iteration {}: {}", i, hashRes);
+                logger->info("Hash iteration {}: {}", i, hashRes);
             }
 
             if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
                 logger->error("Hash verification failed");
-                logger->debug("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
-                logger->debug("Calculated: {}", hashRes);
+                logger->error("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+                logger->error("Calculated: {}", hashRes);
                 return;
             }
         }
@@ -810,18 +809,16 @@ void drone::routeReplyHandler(json& data) {
         string hashRes = msg.hash;
         int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
         
-        logger->debug("Calculating hash iterations: {}", hashIterations);
-        for (int i = this->tesla.routingTable[msg.recvAddr].cost; i < hashIterations; i++) {
+        logger->info("Calculating hash iterations: {}", hashIterations);
+        for (int i = 1; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
-            logger->trace("Hash iteration {}: {}", i, hashRes);
-            logger->debug("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
-            logger->debug("Calculated: {}", hashRes);
+            logger->info("Hash iteration {}: {}", i, hashRes);
         }
 
         if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
             logger->error("Hash verification failed");
-            logger->debug("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
-            logger->debug("Calculated: {}", hashRes);
+            logger->error("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+            logger->error("Calculated: {}", hashRes);
             return;
         }
 
@@ -835,7 +832,6 @@ void drone::routeReplyHandler(json& data) {
         if (msg.destAddr == this->addr) {
             logger->info("This node is the destination for RREP");
             try {
-                logger->debug("Creating routing table entry for source: {}", msg.srcAddr);
                 this->tesla.routingTable.insert(
                     msg.srcAddr, 
                     ROUTING_TABLE_ENTRY(
@@ -865,7 +861,6 @@ void drone::routeReplyHandler(json& data) {
         } else {
             logger->info("Forwarding RREP to next hop");
             try {
-                logger->debug("Creating routing table entry for source: {}", msg.srcAddr);
                 if (!this->tesla.routingTable.find(msg.srcAddr)) {
                     this->tesla.routingTable.insert(
                         msg.srcAddr,
@@ -1014,7 +1009,7 @@ void drone::neighborDiscoveryFunction(){
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
                 this->messageQueue.push(receivedMsg);
-                logger->debug("Received message: {}", receivedMsg);
+                logger->info("Received message: {}", receivedMsg);
             }
             cv.notify_one();
         } catch (const std::exception& e) {
