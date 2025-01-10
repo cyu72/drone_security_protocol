@@ -289,30 +289,35 @@ void drone::dataHandler(json& data){
     DATA_MESSAGE msg;
     msg.deserialize(data);
 
-    if (msg.isBroadcast || (msg.destAddr == this->addr)) {
-        if (this->ipcServer) {
-            this->ipcServer->sendData(msg.data + "\n");
-        } else {
-            logger->error("IPC Server not initialized");
-        }
-    } else {
-        logger->debug("Forwarding data to next hop");
-        if (this->tesla.routingTable.find(msg.destAddr)) {
-            logger->debug("Route found, sending data");
+    /*Place below block in else statement if passing up to an application layer running the ipc*/
+    // if (msg.isBroadcast || (msg.destAddr == this->addr)) {
+    //     if (this->ipc_client) {
+    //         this->ipc_client->sendData(msg.data + "\n");
+    //     } else {
+    //         logger->error("IPC Server not initialized");
+    //     }
+    // } else {}
 
-            if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
-                RERR rerr;
-                // Attach information here for RERR
-                TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
-                rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
-                rerr.addRetAddr(msg.srcAddr);
+    logger->debug("Forwarding data to next hop");
+    if (this->tesla.routingTable.find(msg.destAddr)) {
+        logger->debug("Route found, sending data");
 
-                sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
-            }
-        } else {
-            // we also send a route error?
+        if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
+            RERR rerr;
+            // Attach information here for RERR
+            TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
+            rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+            rerr.addRetAddr(msg.srcAddr);
+
+            sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
         }
     }
+}
+
+void drone::handleIPCMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    messageQueue.push(message);
+    cv.notify_one();
 }
 
 void drone::broadcast(const std::string& msg) {
@@ -464,7 +469,10 @@ void drone::routeErrorHandler(json& data){
             TESLA::nonce_data data = this->tesla.getNonceData(msg.retAddr);
             msg.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
             sendData(this->tesla.routingTable.get(msg.retAddr)->intermediateAddr, msg.serialize());
-            // TODO: Remove entry from table
+            
+            std::lock_guard<std::mutex> rtLock(routingTableMutex); // remove entry from routing table
+            this->tesla.routingTable.remove(msg.retAddr);
+
         } catch (std::runtime_error& e) {
             logger->debug("End of backpropagation reached.");
         }
@@ -558,7 +566,7 @@ void drone::initMessageHandler(json& data) {
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
-    // logger->info("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
+    logger->info("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
 
     if (msg.mode == INIT_MESSAGE::TESLA) {
         logger->debug("Inserting tesla info into routing table.");
@@ -795,7 +803,6 @@ void drone::routeReplyHandler(json& data) {
         logger->debug("Checking routing table entries for addr: {}", msg.recvAddr);
         if (!this->tesla.routingTable.find(msg.recvAddr)) {
             logger->error("No routing table entry found for receiver address");
-            this->tesla.routingTable.print();
             return;
         }
 
@@ -944,14 +951,6 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
-void drone::sendDataUDP(const string& containerName, const string& msg) {
-    try {
-        udpInterface.sendTo(containerName, msg, BRDCST_PORT);
-    } catch (const std::exception& e) {
-        logger->error("Error sending UDP data: {}", e.what());
-    }
-}
-
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
@@ -1060,9 +1059,6 @@ void drone::leaveSwarm() {
         std::lock_guard<std::mutex> lock(routingTableMutex);
         tesla.routingTable.cleanup();
     }
-    
-    // Set running to false to begin shutdown
-    // running = false;
 }
 
 std::future<void> drone::getSignal() {
@@ -1084,7 +1080,12 @@ void drone::start() {
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });
         
-        ipcServer = new IPCServer(60137);
+        ipc_server = std::make_unique<IPCServer>(60137, 
+            [this](const std::string& msg) { 
+                this->handleIPCMessage(msg); 
+            }
+        );
+        ipc_server->start();
         logger->info("Entering main server loop");
         
         while (running) {
@@ -1110,6 +1111,10 @@ void drone::start() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         
+
+        if (ipc_server) {
+            ipc_server->stop();
+        }
         // Join all threads before destruction
         for (auto& thread : threads) {
             if (thread.joinable()) {

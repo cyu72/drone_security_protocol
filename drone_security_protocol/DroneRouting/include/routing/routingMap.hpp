@@ -74,7 +74,10 @@ public:
                 it->second.tesla_disclosure_time = value.tesla_disclosure_time;
             }
         }
+    }
 
+    void remove(const Key& key) {
+        map.erase(key);
     }
  
 

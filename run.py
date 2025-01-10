@@ -339,7 +339,7 @@ def main():
     global matrix, processes, threads
 
     droneNum = args.drone_count
-    droneImage = "cyu72/drone:simulation"
+    droneImage = "cyu72/drone:simulation-terminal"
     gcsImage = "cyu72/gcs:simulation"
 
     controller_addr = input("Enter the controller address: ")
@@ -369,7 +369,7 @@ metadata:
 spec:
   hostname: drone{num}
   containers: 
-    - name: drone{num}
+    - name: logs
       image: {droneImage}
       imagePullPolicy: Always
       stdin: true
@@ -407,6 +407,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 """
             service = f"""apiVersion: v1
 kind: Service
