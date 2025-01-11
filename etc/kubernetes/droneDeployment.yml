@@ -9,8 +9,9 @@ metadata:
 spec:
   hostname: drone1
   containers: 
-    - name: drone1
-      image: cyu72/drone:latest
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -27,15 +28,15 @@ spec:
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "8"
       ports:
         - name: action-port
           protocol: TCP
@@ -46,6 +47,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -83,8 +99,9 @@ metadata:
 spec:
   hostname: drone2
   containers: 
-    - name: drone2
-      image: cyu72/drone:latest
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -101,15 +118,15 @@ spec:
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "8"
       ports:
         - name: action-port
           protocol: TCP
@@ -120,6 +137,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -157,8 +189,9 @@ metadata:
 spec:
   hostname: drone3
   containers: 
-    - name: drone3
-      image: cyu72/drone:latest
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -175,15 +208,15 @@ spec:
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "8"
       ports:
         - name: action-port
           protocol: TCP
@@ -194,6 +227,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -231,8 +279,9 @@ metadata:
 spec:
   hostname: drone4
   containers: 
-    - name: drone4
-      image: cyu72/drone:latest
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -249,15 +298,15 @@ spec:
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "8"
       ports:
         - name: action-port
           protocol: TCP
@@ -268,6 +317,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -305,8 +369,9 @@ metadata:
 spec:
   hostname: drone5
   containers: 
-    - name: drone5
-      image: cyu72/drone:latest
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -323,15 +388,15 @@ spec:
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "8"
       ports:
         - name: action-port
           protocol: TCP
@@ -342,6 +407,21 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
 ---
 apiVersion: v1
 kind: Service
@@ -371,6 +451,276 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
+  name: drone6
+  namespace: default
+  labels:
+    app: drone6
+    tier: drone
+spec:
+  hostname: drone6
+  containers: 
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "6"
+        - name: PORT
+          value: "65456"
+        - name: NODE_ID
+          value: "6"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "8"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone6-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone6
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 80
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30006
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone7
+  namespace: default
+  labels:
+    app: drone7
+    tier: drone
+spec:
+  hostname: drone7
+  containers: 
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "7"
+        - name: PORT
+          value: "65456"
+        - name: NODE_ID
+          value: "7"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "8"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone7-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone7
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 80
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30007
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone8
+  namespace: default
+  labels:
+    app: drone8
+    tier: drone
+spec:
+  hostname: drone8
+  containers: 
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "8"
+        - name: PORT
+          value: "65456"
+        - name: NODE_ID
+          value: "8"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "7"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "8"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"  # Can communicate via localhost since they're in same pod
+        - name: NODE_ID
+          value: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone8-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone8
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 80
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080 
+    nodePort: 30008
+---
+apiVersion: v1
+kind: Pod
+metadata:
   name: gcs
   namespace: default
   labels:
@@ -380,7 +730,8 @@ spec:
   hostname: gcs
   containers: 
     - name: gcs
-      image: cyu72/gcs:latest
+      image: cyu72/gcs:simulation
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
