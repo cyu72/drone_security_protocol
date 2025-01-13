@@ -9,7 +9,7 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->addr = "drone" + std::to_string(nodeID) + "-service.default";
     this->port = port;
     this->nodeID = nodeID;
-    this->seqNum = 0;
+    this->seqNum = 1;
 
     pki_client = std::make_unique<PKIClient>(
         this->addr,
@@ -509,7 +509,7 @@ int drone::sendData(string containerName, const string& msg) {
 }
 
 string drone::getHashFromChain(unsigned long seqNum, unsigned long hopCount) {
-    size_t index = ((seqNum - 1) * this->max_hop_count) + hopCount + 1;
+    size_t index = ((seqNum - 1) * this->max_hop_count) + hopCount;
     
     if (index >= hashChainCache.size()) {
         logger->error("Hash chain access out of bounds: {} >= {}", 
@@ -643,10 +643,10 @@ void drone::routeRequestHandler(json& data){
             }
 
             string hashRes = msg.hash;
-            int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 2 + msg.hopCount;
+            int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
             
             logger->info("Calculating hash iterations: {}", hashIterations);
-            for (int i = 1; i < hashIterations; i++) {
+            for (int i = 0; i < hashIterations; i++) {
                 hashRes = sha256(hashRes);
                 logger->info("Hash iteration {}: {}", i, hashRes);
             }
@@ -697,7 +697,9 @@ void drone::routeRequestHandler(json& data){
                 }
 
                 rrep.hopCount = 1;
-                rrep.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + rrep.hopCount];
+                rrep.hash = (this->seqNum == 1) ? 
+                    getHashFromChain(1, 1) : 
+                    getHashFromChain(this->seqNum, 1);
 
                 RERR rerr_prime;
                 string nonce = generate_nonce();
@@ -743,7 +745,9 @@ void drone::routeRequestHandler(json& data){
                     msg.hopCount, std::chrono::system_clock::now(), msg.hash), 
                     msg.herr);
 
-                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + msg.hopCount];
+                msg.hash = (msg.srcSeqNum == 1) ?
+                    getHashFromChain(1, msg.hopCount) :
+                    this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + msg.hopCount];
 
                 logger->debug("Updating HashTree");
                 tree->addSelf(this->addr, msg.hopCount);
@@ -809,10 +813,10 @@ void drone::routeReplyHandler(json& data) {
 
         // Hash verification
         string hashRes = msg.hash;
-        int hashIterations = (this->max_hop_count * (msg.srcSeqNum - 1)) + 1 + msg.hopCount;
+        int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
         
         logger->info("Calculating hash iterations: {}", hashIterations);
-        for (int i = 1; i < hashIterations; i++) {
+        for (int i = 0; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
             logger->info("Hash iteration {}: {}", i, hashRes);
         }
@@ -879,7 +883,9 @@ void drone::routeReplyHandler(json& data) {
                 }
 
                 msg.hopCount++;
-                msg.hash = this->hashChainCache[(msg.srcSeqNum - 1) * (this->max_hop_count) + msg.hopCount];
+                msg.hash = (msg.srcSeqNum == 1) ? 
+                    getHashFromChain(1, msg.hopCount) : 
+                    getHashFromChain(msg.srcSeqNum, msg.hopCount);
                 msg.recvAddr = this->addr;
 
                 logger->debug("Creating RERR prime with nonce");
@@ -897,9 +903,16 @@ void drone::routeReplyHandler(json& data) {
 
                 string buf = msg.serialize();
                 bytes_sent += buf.size();
-                auto nextHop = this->tesla.routingTable.get(msg.destAddr)->intermediateAddr;
+                auto routeEntry = this->tesla.routingTable.get(msg.destAddr);
+                if (!routeEntry) {
+                    logger->error("No route entry found for destination: {}", msg.destAddr);
+                    return;
+                }
+                auto nextHop = routeEntry->intermediateAddr;
                 logger->info("Forwarding RREP to next hop: {}", nextHop);
+                logger->debug("RREP forwarding - Pre-send state check");
                 sendData(nextHop, buf);
+                logger->debug("RREP forwarding - Post-send state check");
                 
             } catch (const std::exception& e) {
                 logger->error("Exception while forwarding RREP: {}", e.what());
@@ -1011,7 +1024,7 @@ void drone::neighborDiscoveryFunction(){
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
                 this->messageQueue.push(receivedMsg);
-                logger->info("Received message: {}", receivedMsg);
+                logger->debug("Received message: {}", receivedMsg);
             }
             cv.notify_one();
         } catch (const std::exception& e) {
@@ -1091,9 +1104,9 @@ void drone::start() {
                 threads.emplace_back([this, clientSock](){
                     try {
                         string msg = tcpInterface.receive_data(clientSock);
-                        logger->info("Received TCP message: {}", msg);
                         {
                             std::lock_guard<std::mutex> lock(queueMutex);
+                            logger->info("Received TCP message: {}", msg);
                             messageQueue.push(msg);
                         }
                         cv.notify_one();
