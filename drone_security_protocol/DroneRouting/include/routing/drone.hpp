@@ -32,6 +32,7 @@
 #include <ctime>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/fmt/chrono.h>
 #include <atomic>
 #include <condition_variable>
 #include <future>

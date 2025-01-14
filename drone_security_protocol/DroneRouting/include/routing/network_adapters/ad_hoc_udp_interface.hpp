@@ -69,7 +69,6 @@ public:
         if (sendto(sock, msg.c_str(), msg.size(), 0, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
             throw std::runtime_error("Broadcast failed");
         }
-        cout << "Broadcasted: " << msg << endl;
     }
 
     std::string receiveFrom(struct sockaddr_in& client_addr) {
