@@ -491,9 +491,9 @@ void drone::verifyRouteHandler(json& data){
 }
 
 int drone::sendData(string containerName, const string& msg) {
-    logger->debug("Attempting to connect to {} on port {}", containerName, PORT_NUMBER);
+    logger->debug("Attempting to connect to {} on port {}", containerName, this->port);
     TCPInterface clientSocket(0, false); // 0 for port, false for is_server
-    if (clientSocket.connect_to(containerName, PORT_NUMBER) == -1) {
+    if (clientSocket.connect_to(containerName, this->port) == -1) {
         logger->error("Error connecting to {}", containerName);
         return -1;
     }
@@ -524,35 +524,36 @@ void drone::initRouteDiscovery(const string& destAddr){
     /* Constructs an RREQ and broadcast to neighbors
     It is worth noting that routes may sometimes be incorrectly not found because a routing table clear may occur during the route discovery process. To mitagate this issue, we can try any or all of the following: 1) Retry the route discovery process X times before giving up. 2) Increase the amount of time before a routing table clear occurs (Currently at 30 seconds). Check github issue for full description.
     */
-
-    std::unique_ptr<RREQ> msg = std::make_unique<RREQ>(); msg->type = ROUTE_REQUEST; msg->srcAddr = this->addr; msg->recvAddr = this->addr; msg->destAddr = destAddr; msg->srcSeqNum = ++this->seqNum; msg->ttl = this->max_hop_count;
-
-    {   
+    std::unique_ptr<RREQ> msg = std::make_unique<RREQ>();
+    msg->type = ROUTE_REQUEST; msg->srcAddr = this->addr; msg->recvAddr = this->addr;
+    msg->destAddr = destAddr; msg->srcSeqNum = ++this->seqNum; msg->ttl = this->max_hop_count;
+    msg->destSeqNum = [&]() {
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
         auto it = this->tesla.routingTable.get(msg->destAddr);
-        msg->destSeqNum = (it) ? it->seqNum : 0;
-    }
-    msg->hopCount = 1; // 1 = broadcast range
-            try {
-            msg->hash = (msg->srcSeqNum == 1) ? 
-                getHashFromChain(1, 1) : 
-                getHashFromChain(msg->srcSeqNum, 1);
-        } catch (const std::out_of_range& e) {
-            logger->error("Hash chain access error: {}", e.what());
-            return;
-        }
+        return (it) ? it->seqNum : 0;
+    }();
 
-    HashTree tree = HashTree(msg->srcAddr); // init HashTree
+    msg->hopCount = 1;
+    try {
+        msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
+    } catch (const std::out_of_range& e) {
+        logger->error("Hash chain access error: {}", e.what());
+        return;
+    }
+
+    HashTree tree = HashTree(msg->srcAddr);
     msg->hashTree = tree.toVector();
     msg->rootHash = tree.getRoot()->hash;
 
-    RERR rerr_prime; string nonce = generate_nonce(); string tsla_hash = this->tesla.getCurrentHash();
+    RERR rerr_prime;
+    string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
     rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
     msg->herr = HERR::create(rerr_prime, tsla_hash);
-    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
 
+    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
     globalStartTime = std::chrono::high_resolution_clock::now();
     string buf = msg->serialize();
+    logger->info("Serialized message size: {} bytes", buf.size()); 
     udpInterface.broadcast(buf);
 }
 
@@ -645,7 +646,7 @@ void drone::routeRequestHandler(json& data){
             string hashRes = msg.hash;
             int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
             
-            logger->info("Calculating hash iterations: {}", hashIterations);
+            logger->info("Calculating hash iterations: {}", hashIterations); // TODO: Change back to debug
             for (int i = 0; i < hashIterations; i++) {
                 hashRes = sha256(hashRes);
                 logger->info("Hash iteration {}: {}", i, hashRes);
@@ -692,7 +693,7 @@ void drone::routeRequestHandler(json& data){
                     rrep.destSeqNum = this->seqNum;
                     logger->debug("Creating new routing table entry");
                     this->tesla.routingTable.insert(msg.srcAddr, 
-                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, this->seqNum, 0, 
+                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
                         std::chrono::system_clock::now(), msg.hash), msg.herr);
                 }
 
@@ -813,7 +814,7 @@ void drone::routeReplyHandler(json& data) {
 
         // Hash verification
         string hashRes = msg.hash;
-        int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
+        int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 1 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
         
         logger->info("Calculating hash iterations: {}", hashIterations);
         for (int i = 0; i < hashIterations; i++) {
@@ -830,7 +831,7 @@ void drone::routeReplyHandler(json& data) {
 
         if (msg.srcSeqNum < this->tesla.routingTable[msg.recvAddr].seqNum) {
             logger->error("Dropping RREP: Smaller sequence number");
-            logger->debug("Received seqNum: {}, Current seqNum: {}", 
+            logger->error("Received seqNum: {}, Current seqNum: {}", 
                         msg.srcSeqNum, this->tesla.routingTable[msg.recvAddr].seqNum);
             return;
         }

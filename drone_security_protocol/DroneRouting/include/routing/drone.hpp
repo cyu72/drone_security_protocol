@@ -1,6 +1,5 @@
 #ifndef DRONE_HPP
 #define DRONE_HPP
-#define PORT_NUMBER 80
 #define BRDCST_PORT 65457
 #include <cstring>
 #include <mutex>

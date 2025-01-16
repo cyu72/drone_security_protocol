@@ -60,16 +60,27 @@ public:
             }
         } else {
             if (herr_val) {
-                // Update everything
-                it->second = value;
-                it->second.insertHERR(*herr_val);
-            } else {
-                // Update entry completely except for ttl
+                // Update everything except hash
                 it->second.destAddr = value.destAddr;
                 it->second.intermediateAddr = value.intermediateAddr;
                 it->second.seqNum = value.seqNum;
                 it->second.cost = value.cost;
-                it->second.hash = value.hash;
+                if (it->second.hash.empty()) {
+                    it->second.hash = "ERR_TMP_EMPTY";
+                }
+                it->second.tesla_hash = value.tesla_hash;
+                it->second.tesla_disclosure_time = value.tesla_disclosure_time;
+                it->second.ttl = value.ttl;
+                it->second.insertHERR(*herr_val);
+            } else {
+                // Update entry completely except for hash and ttl
+                it->second.destAddr = value.destAddr;
+                it->second.intermediateAddr = value.intermediateAddr;
+                it->second.seqNum = value.seqNum;
+                it->second.cost = value.cost;
+                if (it->second.hash.empty()) {
+                    it->second.hash = "ERR_TMP_EMPTY";
+                }
                 it->second.tesla_hash = value.tesla_hash;
                 it->second.tesla_disclosure_time = value.tesla_disclosure_time;
             }
