@@ -60,7 +60,7 @@ public:
     }
 
     std::string receiveFrom(sockaddr_in& client_addr) {
-        char buffer[1024];
+        char buffer[4096];
         socklen_t addr_len = sizeof(client_addr);
 
         int n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&client_addr, &addr_len);
