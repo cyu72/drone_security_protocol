@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iomanip>
 #include <vector>
+#include <queue>
 #include <iostream>
 #include <openssl/sha.h>
 #include <string>
@@ -36,6 +37,7 @@ private:
     string hashSelf(const string&);
     string hashNodes(const string&, const string&);
     string recalculate(TreeNode*, const int&, const int&, const int&, const int&, const int&, const string&);
+    static string bytesToHexString(unsigned char*, int);
     TreeNode *root;
     void setRoot(TreeNode* node) {this->root = node;}
 
