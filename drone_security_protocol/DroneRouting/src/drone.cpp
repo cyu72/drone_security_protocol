@@ -327,34 +327,24 @@ void drone::broadcast(const std::string& msg) {
 bool drone::addPendingRoute(const PendingRoute& route) {
     std::lock_guard<std::mutex> lock(pendingRoutesMutex);
     
-    // Check if we've hit the size threshold
     if (pendingRoutes.size() >= CLEANUP_THRESHOLD) {
         cleanupExpiredRoutes();
     }
     
-    // If we're still at max capacity after cleanup, reject new route
     if (pendingRoutes.size() >= MAX_PENDING_ROUTES) {
-        logger->warn("Maximum pending routes limit reached. Rejecting new route to {}", 
-                    route.destAddr);
+        logger->warn("Maximum pending routes limit reached. Rejecting route to {}", route.destAddr);
         return false;
     }
     
-    // Check for duplicate pending routes to same destination
     auto it = std::find_if(pendingRoutes.begin(), pendingRoutes.end(),
-        [&route](const PendingRoute& existing) {
-            return existing.destAddr == route.destAddr;
-        });
+        [&route](const auto& existing) { return existing.destAddr == route.destAddr; });
     
     if (it != pendingRoutes.end()) {
-        // Update existing route instead of adding new one
-        it->msg = route.msg;
-        it->expirationTime = route.expirationTime;
-        logger->debug("Updated existing pending route to {}", route.destAddr);
+        *it = route;
         return true;
     }
     
     pendingRoutes.push_back(route);
-    logger->debug("Added new pending route to {}", route.destAddr);
     return true;
 }
 
@@ -982,7 +972,7 @@ void drone::neighborDiscoveryHelper(){
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
+        sleep(30); // TODO: Change to TESLA/Authenticator disclosure time?
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
             this->tesla.routingTable.cleanup();
