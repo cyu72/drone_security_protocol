@@ -339,27 +339,19 @@ bool drone::addPendingRoute(const PendingRoute& route) {
     }
     
     if (pendingRoutes.size() >= MAX_PENDING_ROUTES) {
-        logger->warn("Maximum pending routes limit reached. Rejecting new route to {}", 
-                    route.destAddr);
+        logger->warn("Maximum pending routes limit reached. Rejecting route to {}", route.destAddr);
         return false;
     }
     
-    // Check for duplicate pending routes to same destination
     auto it = std::find_if(pendingRoutes.begin(), pendingRoutes.end(),
-        [&route](const PendingRoute& existing) {
-            return existing.destAddr == route.destAddr;
-        });
+        [&route](const auto& existing) { return existing.destAddr == route.destAddr; });
     
     if (it != pendingRoutes.end()) {
-        // Update existing route instead of adding new one
-        it->msg = route.msg;
-        it->expirationTime = route.expirationTime;
-        logger->debug("Updated existing pending route to {}", route.destAddr);
+        *it = route;
         return true;
     }
     
     pendingRoutes.push_back(route);
-    logger->debug("Added new pending route to {}", route.destAddr);
     return true;
 }
 
@@ -535,26 +527,32 @@ void drone::initRouteDiscovery(const string& destAddr){
         msg->destSeqNum = (it) ? it->seqNum : 0;
     }
     msg->hopCount = 1; // 1 = broadcast range
-            try {
-            msg->hash = (msg->srcSeqNum == 1) ? 
-                getHashFromChain(1, 1) : 
-                getHashFromChain(msg->srcSeqNum, 1);
-        } catch (const std::out_of_range& e) {
-            logger->error("Hash chain access error: {}", e.what());
-            return;
-        }
+    try {
+        msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
+    } catch (const std::out_of_range& e) {
+        logger->error("Hash chain access error: {}", e.what());
+        return;
+    }
 
-    HashTree tree = HashTree(msg->srcAddr); // init HashTree
+    HashTree tree = HashTree(msg->srcAddr);
     msg->hashTree = tree.toVector();
     msg->rootHash = tree.getRoot()->hash;
 
-    RERR rerr_prime; string nonce = generate_nonce(); string tsla_hash = this->tesla.getCurrentHash();
+    RERR rerr_prime; string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
     rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
     msg->herr = HERR::create(rerr_prime, tsla_hash);
-    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
 
-    globalStartTime = std::chrono::high_resolution_clock::now();
+    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+    PendingRoute pendingRoute;
+    pendingRoute.destAddr = destAddr;
+    pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                std::chrono::seconds(this->timeout_sec);
+    if (!addPendingRoute(pendingRoute)) {
+        logger->error("Failed to queue route discovery for {}", destAddr);
+        return;
+    }
     string buf = msg->serialize();
+    logger->info("Serialized message size: {} bytes", buf.size()); 
     udpInterface.broadcast(buf);
 }
 
@@ -638,8 +636,8 @@ void drone::routeRequestHandler(json& data){
             logger->debug("Found routing entries for src and recv addresses");
             
             if (msg.srcSeqNum <= this->tesla.routingTable.get(msg.srcAddr)->seqNum) {
-                logger->error("Dropping RREQ: Smaller sequence number");
-                logger->error("Received seqNum: {}, Current seqNum: {}", 
+                logger->warn("Dropping RREQ: Smaller sequence number");
+                logger->warn("Received seqNum: {}, Current seqNum: {}", 
                             msg.srcSeqNum, this->tesla.routingTable.get(msg.srcAddr)->seqNum);
                 return;
             }
@@ -661,7 +659,6 @@ void drone::routeRequestHandler(json& data){
             }
         }
 
-        // Create HashTree with RAII wrapper for automatic cleanup
         std::unique_ptr<HashTree> tree;
         try {
             tree = std::make_unique<HashTree>(msg.hashTree, msg.hopCount, msg.recvAddr);
@@ -694,7 +691,7 @@ void drone::routeRequestHandler(json& data){
                     rrep.destSeqNum = this->seqNum;
                     logger->debug("Creating new routing table entry");
                     this->tesla.routingTable.insert(msg.srcAddr, 
-                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, this->seqNum, 0, 
+                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
                         std::chrono::system_clock::now(), msg.hash), msg.herr);
                 }
 
@@ -788,7 +785,7 @@ void drone::routeRequestHandler(json& data){
 
 void drone::routeReplyHandler(json& data) {
     auto start_time = std::chrono::high_resolution_clock::now();
-    size_t bytes_sent = 0;  // Track total bytes sent
+    size_t bytes_sent = 0;
     logger->debug("=== Starting RREP Handler ===");
     try {
         logger->debug("Handling RREP payload: {}", data.dump());
@@ -831,8 +828,8 @@ void drone::routeReplyHandler(json& data) {
         }
 
         if (msg.srcSeqNum < this->tesla.routingTable[msg.recvAddr].seqNum) {
-            logger->error("Dropping RREP: Smaller sequence number");
-            logger->error("Received seqNum: {}, Current seqNum: {}", 
+            logger->warn("Dropping RREP: Smaller sequence number");
+            logger->warn("Received seqNum: {}, Current seqNum: {}", 
                         msg.srcSeqNum, this->tesla.routingTable[msg.recvAddr].seqNum);
             return;
         }
@@ -853,11 +850,20 @@ void drone::routeReplyHandler(json& data) {
                     msg.herr
                 );
                 
-                logger->info("Route successfully established to {}", msg.srcAddr);
-                globalEndTime = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    globalEndTime - globalStartTime).count();
-                logger->info("Total route establishment time: {} ms", duration);
+                {
+                    std::lock_guard<std::mutex> lock(pendingRoutesMutex);
+                    auto it = std::find_if(pendingRoutes.begin(), pendingRoutes.end(),
+                        [&msg](const PendingRoute& route) {
+                            return route.destAddr == msg.srcAddr;
+                        });
+
+                    if (it != pendingRoutes.end()) {
+                        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - 
+                            (it->expirationTime - std::chrono::seconds(this->timeout_sec))).count();
+                        logger->info("Route establishment to {} completed in {} ms", msg.srcAddr, duration);
+                    }
+                }
                 
                 logger->debug("Processing any pending routes");
                 this->processPendingRoutes();
@@ -970,7 +976,7 @@ void drone::neighborDiscoveryHelper(){
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
+        sleep(30); // TODO: Change to TESLA/Authenticator disclosure time?
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
             this->tesla.routingTable.cleanup();

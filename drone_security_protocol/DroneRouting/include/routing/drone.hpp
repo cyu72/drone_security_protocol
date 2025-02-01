@@ -39,7 +39,6 @@
 #include <set>
 #include "hashTree.hpp"
 #include "messages.hpp"
-// #include "ipc_client.hpp"
 #include "ipc_server.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
@@ -224,7 +223,6 @@ class drone {
 
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
-        // ipc_client* ipc_client = nullptr;
         std::unique_ptr<IPCServer> ipc_server;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
@@ -245,7 +243,7 @@ class drone {
         std::vector<uint8_t> generateChallengeData(size_t length = 32);
         void challengeResponseHandler(json& data);
 
-        void handleIPCMessage(const std::string& message);
+        void handleIPCMessage(const std::string&);
 };
 
 #endif
