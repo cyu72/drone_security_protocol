@@ -1,8 +1,5 @@
 #include <routing/drone.hpp>
 
-std::chrono::high_resolution_clock::time_point globalStartTime;
-std::chrono::high_resolution_clock::time_point globalEndTime;
-
 drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     logger = createLogger(fmt::format("drone_{}", nodeID));
 
@@ -812,7 +809,7 @@ void drone::routeReplyHandler(json& data) {
 
         // Hash verification
         string hashRes = msg.hash;
-        int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
+        int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 1 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
         
         logger->debug("Calculating hash iterations: {}", hashIterations);
         for (int i = 0; i < hashIterations; i++) {
@@ -976,7 +973,7 @@ void drone::neighborDiscoveryHelper(){
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(30); // TODO: Change to TESLA/Authenticator disclosure time?
+        sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
             this->tesla.routingTable.cleanup();
