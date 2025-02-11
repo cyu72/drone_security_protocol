@@ -360,7 +360,7 @@ struct RREP : public MESSAGE {
 
 };
 
-struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the future with TESLA_MESSAGE
+struct INIT_MESSAGE : public MESSAGE {
     enum INIT_MODE {
         AUTH,
         TESLA
@@ -376,15 +376,15 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         srcAddr = "";
     }
 
-    INIT_MESSAGE(string hash, string addr) {
+    INIT_MESSAGE(string hash, string addr, bool mode) {
         this->type = HELLO;
         this->hash = hash;
         this->srcAddr = addr;
+        this->mode = mode ? AUTH :TESLA;
     }
 
     void set_tesla_init(string srcAddr, string hash, int disclosure_time) {
         this->srcAddr = srcAddr;
-        this->hash = hash;
         this->disclosure_time = disclosure_time;
         this->mode = TESLA;
     }
@@ -393,8 +393,14 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         json j = json{
             {"type", this->type},
             {"hash", this->hash},
-            {"srcAddr", this->srcAddr}
+            {"srcAddr", this->srcAddr},
+            {"mode", this->mode}
         };
+
+        if (this->mode == TESLA) {
+            j["disclosure_time"] = this->disclosure_time;
+        }
+        
         return j.dump();
     }
 
@@ -402,6 +408,10 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         this->type = j["type"];
         this->hash = j["hash"];
         this->srcAddr = j["srcAddr"];
+        this->mode = j["mode"];
+        if (this->mode == TESLA) {
+            this->disclosure_time = j["disclosure_time"];
+        }
     }
     
 };

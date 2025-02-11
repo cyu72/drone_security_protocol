@@ -128,21 +128,9 @@ void drone::clientResponseThread() {
             }
 
             if (messageType == HELLO) {
-                    logger->debug("Processing HELLO message");
-                    try {
-                        INIT_MESSAGE init_msg;
-                        init_msg.deserialize(jsonData);
-                        
-                        std::lock_guard<std::mutex> rtLock(routingTableMutex);
-                        tesla.routingTable.insert(init_msg.srcAddr, 
-                            ROUTING_TABLE_ENTRY(init_msg.srcAddr, init_msg.srcAddr, 0, 1, 
-                                std::chrono::system_clock::now(), init_msg.hash));
-                        
-                        logger->debug("Added {} to routing table from HELLO message", init_msg.srcAddr);
-                    } catch (const std::exception& e) {
-                        logger->error("Error processing HELLO message: {}", e.what());
-                    }
-                } 
+                initMessageHandler(jsonData);
+                continue;
+            } 
 
             // For all other message types, check if sender is validated
             // if (!isValidatedSender(srcAddr)) {
@@ -207,9 +195,6 @@ void drone::clientResponseThread() {
                     case DATA:
                         logger->info("Processing validated data message");
                         dataHandler(jsonData);
-                        break;
-                    case HELLO:
-                        initMessageHandler(jsonData);
                         break;
                     case INIT_ROUTE_DISCOVERY:
                         logger->info("Processing validated route discovery request");
@@ -555,11 +540,11 @@ void drone::initRouteDiscovery(const string& destAddr){
 
 void drone::initMessageHandler(json& data) {
 /*Creates a routing table entry for each authenticator & tesla msg received*/
-    std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
-    if (std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
-        return;
-    }
+    // std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
+    // if (std::chrono::duration_cast<std::chrono::seconds>(
+    //     std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
+    //     return;
+    // }
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
@@ -973,10 +958,10 @@ void drone::neighborDiscoveryHelper(){
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
 
     while(true){
-        sleep(5); // TODO: Change to TESLA/Authenticator disclosure time?
+        sleep(5);
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
-            this->tesla.routingTable.cleanup();
+            // this->tesla.routingTable.cleanup();
         }
 
         {
