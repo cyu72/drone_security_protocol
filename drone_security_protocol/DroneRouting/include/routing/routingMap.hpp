@@ -80,8 +80,6 @@ public:
                 if (it->second.hash.empty()) {
                     it->second.hash = "ERR_TMP_EMPTY";
                 }
-                it->second.tesla_hash = value.tesla_hash;
-                it->second.tesla_disclosure_time = value.tesla_disclosure_time;
             }
         }
     }

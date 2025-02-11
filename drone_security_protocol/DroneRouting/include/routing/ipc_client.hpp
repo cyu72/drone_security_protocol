@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <netdb.h>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -13,7 +12,6 @@ class ipc_client {
 private:
     int sock;
     int port;
-    std::string host;
     struct sockaddr_in serv_addr;
     bool connected = false;
 
@@ -22,43 +20,23 @@ private:
             throw std::runtime_error("Socket creation error");
         }
   
-        struct addrinfo hints = {}, *result;
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_STREAM;
-        
-        // Convert port to string for getaddrinfo
-        auto port_str = std::to_string(port);
-        
-        int status = getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result);
-        if (status != 0) {
-            throw std::runtime_error("Failed to resolve host: " + std::string(gai_strerror(status)));
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(port);
+    
+        if(inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+            throw std::runtime_error("Invalid address/Address not supported");
         }
-
-        // Try each address until we successfully connect
-        bool connected = false;
-        for (struct addrinfo *rp = result; rp != nullptr; rp = rp->ai_next) {
-            if (connect(sock, rp->ai_addr, rp->ai_addrlen) == 0) {
-                connected = true;
-                break;
-            }
-        }
-
-        freeaddrinfo(result);
-
-        if (!connected) {
-            close(sock);
+  
+        if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
             throw std::runtime_error("Connection failed");
         }
 
         connected = true;
-        std::cout << "Connected to server " << host << " on port " << port << std::endl;
+        std::cout << "Connected to server on port " << port << std::endl;
     }
 
 public:
     ipc_client(int port) : port(port) {
-        // Get host from environment variable or use localhost as fallback
-        const char* env_host = std::getenv("ROUTING_HOST");
-        host = env_host ? env_host : "127.0.0.1";
         connect_to_server();
     }
 

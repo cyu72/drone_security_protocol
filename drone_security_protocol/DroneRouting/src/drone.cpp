@@ -128,21 +128,9 @@ void drone::clientResponseThread() {
             }
 
             if (messageType == HELLO) {
-                    logger->debug("Processing HELLO message");
-                    try {
-                        INIT_MESSAGE init_msg;
-                        init_msg.deserialize(jsonData);
-                        
-                        std::lock_guard<std::mutex> rtLock(routingTableMutex);
-                        tesla.routingTable.insert(init_msg.srcAddr, 
-                            ROUTING_TABLE_ENTRY(init_msg.srcAddr, init_msg.srcAddr, 0, 1, 
-                                std::chrono::system_clock::now(), init_msg.hash));
-                        
-                        logger->debug("Added {} to routing table from HELLO message", init_msg.srcAddr);
-                    } catch (const std::exception& e) {
-                        logger->error("Error processing HELLO message: {}", e.what());
-                    }
-                } 
+                initMessageHandler(jsonData);
+                continue;
+            } 
             // For all other message types, check if sender is validated
             // if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
             //     if (messageType == HELLO) {
@@ -206,9 +194,6 @@ void drone::clientResponseThread() {
                     case DATA:
                         // logger->info("Processing validated data message from {}", srcAddr);
                         dataHandler(jsonData);
-                        break;
-                    case HELLO:
-                        initMessageHandler(jsonData);
                         break;
                     case INIT_ROUTE_DISCOVERY:
                         // logger->info("Processing validated route discovery request from {}", srcAddr);
@@ -554,11 +539,11 @@ void drone::initRouteDiscovery(const string& destAddr){
 
 void drone::initMessageHandler(json& data) {
 /*Creates a routing table entry for each authenticator & tesla msg received*/
-    std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
-    if (std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
-        return;
-    }
+    // std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
+    // if (std::chrono::duration_cast<std::chrono::seconds>(
+    //     std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
+    //     return;
+    // }
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
@@ -574,6 +559,7 @@ void drone::initMessageHandler(json& data) {
         this->tesla.routingTable.insert(msg.srcAddr, 
             ROUTING_TABLE_ENTRY(msg.srcAddr, msg.srcAddr, 0, 1, 
                 std::chrono::system_clock::now(), msg.hash));
+        logger->info("Added {} to routing table from HELLO message: {}", msg.srcAddr, msg.hash);
     }
 }
 
@@ -810,10 +796,10 @@ void drone::routeReplyHandler(json& data) {
         string hashRes = msg.hash;
         int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 1 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
         
-        logger->debug("Calculating hash iterations: {}", hashIterations);
+        logger->info("Calculating hash iterations: {}", hashIterations);
         for (int i = 0; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
-            logger->debug("Hash iteration {}: {}", i, hashRes);
+            logger->info("Hash iteration {}: {}", i, hashRes);
         }
 
         if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
@@ -967,15 +953,16 @@ void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
     msg = this->tesla.init_tesla(this->addr).serialize();
-    logger->trace("Broadcasting TESLA Init Message: {}", msg);
+    logger->info("Broadcasting TESLA Init Message: {}", msg);
     udpInterface.broadcast(msg);
-    msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
+    msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr, true).serialize();
+    logger->info("Broadcasting Authenticator Init Message: {}", msg);
 
     while(true){
-        sleep(30); // TODO: Change to TESLA/Authenticator disclosure time?
+        sleep(5);
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
-            this->tesla.routingTable.cleanup();
+            // this->tesla.routingTable.cleanup();
         }
 
         {
