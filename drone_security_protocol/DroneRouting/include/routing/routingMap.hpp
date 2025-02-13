@@ -65,8 +65,8 @@ public:
                 it->second.intermediateAddr = value.intermediateAddr;
                 it->second.seqNum = value.seqNum;
                 it->second.cost = value.cost;
-                if (it->second.hash.empty()) {
-                    it->second.hash = "ERR_TMP_EMPTY";
+                if (!value.hash.empty()) { 
+                    it->second.hash = value.hash;
                 }
                 it->second.tesla_hash = value.tesla_hash;
                 it->second.tesla_disclosure_time = value.tesla_disclosure_time;
@@ -78,11 +78,9 @@ public:
                 it->second.intermediateAddr = value.intermediateAddr;
                 it->second.seqNum = value.seqNum;
                 it->second.cost = value.cost;
-                if (it->second.hash.empty()) {
-                    it->second.hash = "ERR_TMP_EMPTY";
+                if (!value.hash.empty()) { 
+                    it->second.hash = value.hash;
                 }
-                it->second.tesla_hash = value.tesla_hash;
-                it->second.tesla_disclosure_time = value.tesla_disclosure_time;
             }
         }
     }

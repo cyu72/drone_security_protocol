@@ -674,7 +674,7 @@ void drone::routeRequestHandler(json& data){
                     logger->debug("Creating new routing table entry");
                     this->tesla.routingTable.insert(msg.srcAddr, 
                         ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
-                        std::chrono::system_clock::now(), msg.hash), msg.herr);
+                        std::chrono::system_clock::now()), msg.herr);
                 }
 
                 rrep.hopCount = 1;
@@ -723,7 +723,7 @@ void drone::routeRequestHandler(json& data){
                 logger->debug("Inserting routing table entry");
                 this->tesla.routingTable.insert(msg.srcAddr, 
                     ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 
-                    msg.hopCount, std::chrono::system_clock::now(), msg.hash), 
+                    msg.hopCount, std::chrono::system_clock::now()), 
                     msg.herr);
 
                 msg.hash = (msg.srcSeqNum == 1) ?
@@ -826,8 +826,7 @@ void drone::routeReplyHandler(json& data) {
                         msg.recvAddr,
                         msg.srcSeqNum,
                         msg.hopCount,
-                        std::chrono::system_clock::now(),
-                        msg.hash
+                        std::chrono::system_clock::now()
                     ),
                     msg.herr
                 );
@@ -865,8 +864,7 @@ void drone::routeReplyHandler(json& data) {
                             msg.recvAddr,
                             msg.srcSeqNum,
                             msg.hopCount,
-                            std::chrono::system_clock::now(),
-                            msg.hash
+                            std::chrono::system_clock::now()
                         ),
                         msg.herr
                     );
@@ -955,7 +953,7 @@ void drone::neighborDiscoveryHelper(){
     msg = this->tesla.init_tesla(this->addr).serialize();
     logger->trace("Broadcasting TESLA Init Message: {}", msg);
     udpInterface.broadcast(msg);
-    msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr).serialize();
+    msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr, true).serialize();
 
     while(true){
         sleep(5);
