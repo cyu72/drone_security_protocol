@@ -385,6 +385,7 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
 
     void set_tesla_init(string srcAddr, string hash, int disclosure_time) {
         this->srcAddr = srcAddr;
+        this->hash = hash;
         this->disclosure_time = disclosure_time;
         this->mode = TESLA;
     }

@@ -559,7 +559,6 @@ void drone::initMessageHandler(json& data) {
         this->tesla.routingTable.insert(msg.srcAddr, 
             ROUTING_TABLE_ENTRY(msg.srcAddr, msg.srcAddr, 0, 1, 
                 std::chrono::system_clock::now(), msg.hash));
-        logger->info("Added {} to routing table from HELLO message: {}", msg.srcAddr, msg.hash);
     }
 }
 
@@ -674,7 +673,7 @@ void drone::routeRequestHandler(json& data){
                     logger->debug("Creating new routing table entry");
                     this->tesla.routingTable.insert(msg.srcAddr, 
                         ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
-                        std::chrono::system_clock::now(), msg.hash), msg.herr);
+                        std::chrono::system_clock::now()), msg.herr);
                 }
 
                 rrep.hopCount = 1;
@@ -723,7 +722,7 @@ void drone::routeRequestHandler(json& data){
                 logger->debug("Inserting routing table entry");
                 this->tesla.routingTable.insert(msg.srcAddr, 
                     ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 
-                    msg.hopCount, std::chrono::system_clock::now(), msg.hash), 
+                    msg.hopCount, std::chrono::system_clock::now()), 
                     msg.herr);
 
                 msg.hash = (msg.srcSeqNum == 1) ?
@@ -796,10 +795,10 @@ void drone::routeReplyHandler(json& data) {
         string hashRes = msg.hash;
         int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 1 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
         
-        logger->info("Calculating hash iterations: {}", hashIterations);
+        logger->debug("Calculating hash iterations: {}", hashIterations);
         for (int i = 0; i < hashIterations; i++) {
             hashRes = sha256(hashRes);
-            logger->info("Hash iteration {}: {}", i, hashRes);
+            logger->debug("Hash iteration {}: {}", i, hashRes);
         }
 
         if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
@@ -826,8 +825,7 @@ void drone::routeReplyHandler(json& data) {
                         msg.recvAddr,
                         msg.srcSeqNum,
                         msg.hopCount,
-                        std::chrono::system_clock::now(),
-                        msg.hash
+                        std::chrono::system_clock::now()
                     ),
                     msg.herr
                 );
@@ -865,8 +863,7 @@ void drone::routeReplyHandler(json& data) {
                             msg.recvAddr,
                             msg.srcSeqNum,
                             msg.hopCount,
-                            std::chrono::system_clock::now(),
-                            msg.hash
+                            std::chrono::system_clock::now()
                         ),
                         msg.herr
                     );
