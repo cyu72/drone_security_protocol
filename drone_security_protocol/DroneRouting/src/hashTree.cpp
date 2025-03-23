@@ -65,8 +65,19 @@ bool HashTree::verifyTree(string& recvHash) {
 }
 
 void HashTree::addSelf(const string& droneID, const int& incomingHopCount) {
-    /* Adds a new node to the tree. 
-    Takes in self drone id and the hopCount after adding the currentNode*/
+    CacheKey key{root->getHash(), droneID, incomingHopCount};
+    
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        auto it = addSelfCache.find(key);
+        
+        if (it != addSelfCache.end()) {
+            deserializeTree(it->second.treeHashes);
+            it->second.timestamp = std::chrono::steady_clock::now();
+            return;
+        }
+    }
+    
     int leafLevel = std::ceil(std::log2(incomingHopCount));
     int totalAvailableNodes = std::pow(2, leafLevel) / 2;
     
@@ -74,23 +85,100 @@ void HashTree::addSelf(const string& droneID, const int& incomingHopCount) {
         root->left = new TreeNode(root->getHash(), true);
         root->right = new TreeNode(hashSelf(droneID), true);
         root->updateHash(hashNodes(root->left->getHash(), root->right->getHash()));
-        return;
-    }
+    } else {
+        int n = incomingHopCount - 1;
+        if ((n & (n - 1)) == 0) {
+            TreeNode* newRoot = new TreeNode("", true);
+            TreeNode* newRight = new TreeNode("", true);
+            newRoot->left = root;
+            newRoot->right = newRight;
+            root = newRoot;
+        }
 
-    int n = incomingHopCount - 1;
-    if ((n & (n - 1)) == 0) {
-        TreeNode* newRoot = new TreeNode("", true);
-        TreeNode* newRight = new TreeNode("", true);
-        newRoot->left = root;
-        newRoot->right = newRight;
-        root = newRoot;
+        string finalHash = recalculate(root->right, totalAvailableNodes / 2,
+                                     totalAvailableNodes + 1,
+                                     totalAvailableNodes + (totalAvailableNodes / 2) + 1,
+                                     leafLevel - 1, incomingHopCount, droneID);
+        root->updateHash(hashNodes(root->left->getHash(), finalHash));
     }
+    
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        
+        // Prune cache if necessary
+        if (addSelfCache.size() >= MAX_CACHE_SIZE) {
+            std::vector<std::pair<CacheKey, std::chrono::steady_clock::time_point>> entries;
+            for (const auto& entry : addSelfCache) {
+                entries.push_back({entry.first, entry.second.timestamp});
+            }
+            
+            std::sort(entries.begin(), entries.end(), 
+                [](const auto& a, const auto& b) { return a.second < b.second; });
+                
+            size_t toRemove = addSelfCache.size() / 5;
+            for (size_t i = 0; i < toRemove; ++i) {
+                addSelfCache.erase(entries[i].first);
+            }
+        }
+        
+        CacheEntry entry;
+        entry.treeHashes = serializeTree();
+        entry.timestamp = std::chrono::steady_clock::now();
+        addSelfCache[key] = std::move(entry);
+    }
+}
 
-    string finalHash = recalculate(root->right, totalAvailableNodes / 2,
-                                 totalAvailableNodes + 1,
-                                 totalAvailableNodes + (totalAvailableNodes / 2) + 1,
-                                 leafLevel - 1, incomingHopCount, droneID);
-    root->updateHash(hashNodes(root->left->getHash(), finalHash));
+std::unordered_map<HashTree::CacheKey, HashTree::CacheEntry, HashTree::CacheKeyHash> HashTree::addSelfCache;
+std::mutex HashTree::cacheMutex;
+
+std::vector<std::string> HashTree::serializeTree() const {
+    std::vector<std::string> result;
+    std::queue<TreeNode*> nodes;
+    
+    if (root) nodes.push(root);
+    
+    while (!nodes.empty()) {
+        TreeNode* node = nodes.front();
+        nodes.pop();
+        
+        if (!node) {
+            result.push_back(""); // Null marker
+            continue;
+        }
+        
+        result.push_back(node->getHash());
+        nodes.push(node->left);
+        nodes.push(node->right);
+    }
+    
+    return result;
+}
+
+void HashTree::deserializeTree(const std::vector<std::string>& treeHashes) {
+    if (treeHashes.empty()) return;
+    
+    if (root) {
+        deleteTree(root);
+    }
+    
+    std::queue<TreeNode**> nodeRefs;
+    nodeRefs.push(&root);
+    
+    size_t index = 0;
+    while (!nodeRefs.empty() && index < treeHashes.size()) {
+        TreeNode** nodeRef = nodeRefs.front();
+        nodeRefs.pop();
+        
+        if (treeHashes[index].empty()) {
+            *nodeRef = nullptr;
+        } else {
+            *nodeRef = new TreeNode(treeHashes[index], true);
+            nodeRefs.push(&((*nodeRef)->left));
+            nodeRefs.push(&((*nodeRef)->right));
+        }
+        
+        index++;
+    }
 }
 
 string HashTree::recalculate(TreeNode* node, const int& nodesAvail, const int& leftIndex,

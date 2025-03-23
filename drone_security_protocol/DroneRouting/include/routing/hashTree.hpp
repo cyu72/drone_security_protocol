@@ -41,6 +41,38 @@ private:
     TreeNode *root;
     void setRoot(TreeNode* node) {this->root = node;}
 
+    struct CacheKey {
+        std::string rootHash;
+        std::string droneID;
+        int hopCount;
+        
+        bool operator==(const CacheKey& other) const {
+            return rootHash == other.rootHash && 
+                   droneID == other.droneID && 
+                   hopCount == other.hopCount;
+        }
+    };
+    
+    struct CacheKeyHash {
+        std::size_t operator()(const CacheKey& key) const {
+            return std::hash<std::string>()(key.rootHash) ^ 
+                   std::hash<std::string>()(key.droneID) ^ 
+                   std::hash<int>()(key.hopCount);
+        }
+    };
+    
+    struct CacheEntry {
+        std::vector<std::string> treeHashes;
+        std::chrono::steady_clock::time_point timestamp;
+    };
+    
+    static std::unordered_map<CacheKey, CacheEntry, CacheKeyHash> addSelfCache;
+    static std::mutex cacheMutex;
+    static const size_t MAX_CACHE_SIZE = 1000;
+    
+    std::vector<std::string> serializeTree() const;
+    void deserializeTree(const std::vector<std::string>& treeHashes);
+
 public:
     // case1: first time init tree
     HashTree(const string& droneNum) {
