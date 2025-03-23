@@ -111,26 +111,56 @@ void PKIClient::storePendingChallenge(const std::string& drone_id,
 }
 
 bool PKIClient::signMessage(std::vector<uint8_t>& msg_data) {
-    if (!has_valid_cert_.load(std::memory_order_acquire)) return false;
+    if (!has_valid_cert_.load(std::memory_order_acquire)) {
+        return false;
+    }
     
     try {
-        size_t sig_len;
-        std::vector<uint8_t> signature(EVP_PKEY_size(key_.get()));
-        
-        EVP_MD_CTX_reset(md_ctx_.get());
-        
-        if (!EVP_DigestSignInit(md_ctx_.get(), nullptr, EVP_sha256(), nullptr, key_.get()) ||
-            !EVP_DigestSignUpdate(md_ctx_.get(), msg_data.data(), msg_data.size())) {
+        // Create a new context for each signing operation
+        EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+        if (!md_ctx) {
+            std::cerr << "Failed to create message digest context" << std::endl;
             return false;
         }
         
-        if (!EVP_DigestSignFinal(md_ctx_.get(), signature.data(), &sig_len)) {
+        // Initialize for signing
+        if (EVP_DigestSignInit(md_ctx, NULL, EVP_sha256(), NULL, key_.get()) <= 0) {
+            std::cerr << "Failed to initialize signing operation" << std::endl;
+            EVP_MD_CTX_free(md_ctx);
             return false;
         }
         
-        msg_data = std::vector<uint8_t>(signature.begin(), signature.begin() + sig_len);
+        // Add data to be signed
+        if (EVP_DigestSignUpdate(md_ctx, msg_data.data(), msg_data.size()) <= 0) {
+            std::cerr << "Failed to add data to signing context" << std::endl;
+            EVP_MD_CTX_free(md_ctx);
+            return false;
+        }
+        
+        // Determine signature size
+        size_t sig_len = 0;
+        if (EVP_DigestSignFinal(md_ctx, NULL, &sig_len) <= 0) {
+            std::cerr << "Failed to determine signature size" << std::endl;
+            EVP_MD_CTX_free(md_ctx);
+            return false;
+        }
+        
+        // Allocate memory for signature
+        std::vector<uint8_t> signature(sig_len);
+        
+        // Get the signature
+        if (EVP_DigestSignFinal(md_ctx, signature.data(), &sig_len) <= 0) {
+            std::cerr << "Failed to create signature" << std::endl;
+            EVP_MD_CTX_free(md_ctx);
+            return false;
+        }
+        
+        EVP_MD_CTX_free(md_ctx);
+        signature.resize(sig_len);
+        msg_data = std::move(signature);
         return true;
-    } catch (...) {
+    } catch (const std::exception& e) {
+        std::cerr << "Exception in signMessage: " << e.what() << std::endl;
         return false;
     }
 }

@@ -130,51 +130,46 @@ void drone::clientResponseThread() {
             if (messageType == HELLO) {
                 initMessageHandler(jsonData);
                 continue;
-            } 
+            } else if (messageType == INIT_ROUTE_DISCOVERY) {
+                logger->info("Processing route discovery request");
+                GCS_MESSAGE ctl;
+                ctl.deserialize(jsonData);
+                initRouteDiscovery(ctl.destAddr);
+                continue;
+            }
             // For all other message types, check if sender is validated
-            // if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
-            //     if (messageType == HELLO) {
-            //         logger->debug("Processing HELLO message from {}", srcAddr);
-            //         try {
-            //             INIT_MESSAGE init_msg;
-            //             init_msg.deserialize(jsonData);
-                        
-            //             std::lock_guard<std::mutex> rtLock(routingTableMutex);
-            //             tesla.routingTable.insert(init_msg.srcAddr, 
-            //                 ROUTING_TABLE_ENTRY(init_msg.srcAddr, init_msg.srcAddr, 0, 1, 
-            //                     std::chrono::system_clock::now(), init_msg.hash));
-                        
-            //             logger->debug("Added {} to routing table from HELLO message", init_msg.srcAddr);
-            //         } catch (const std::exception& e) {
-            //             logger->error("Error processing HELLO message: {}", e.what());
-            //         }
-            //     } 
-            //     logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
-            //     try {
-            //         ChallengeRequest challenge_req;
-            //         challenge_req.type = CERTIFICATE_VALIDATION;
-            //         challenge_req.challenge_type = CHALLENGE_REQUEST;
-            //         challenge_req.srcAddr = this->addr;
-            //         challenge_req.nonce = static_cast<uint32_t>(std::random_device{}());
-            //         challenge_req.timestamp = std::chrono::system_clock::now();
-            //         challenge_req.challenge_data = generateChallengeData();
+            if (!jsonData.contains("srcAddr")) {
+                logger->error("Message missing srcAddr field");
+                continue;
+            }
+            std::string srcAddr = jsonData["recvAddr"].get<std::string>();
+            if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
+                logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
+                try {
+                    ChallengeRequest challenge_req;
+                    challenge_req.type = CERTIFICATE_VALIDATION;
+                    challenge_req.challenge_type = CHALLENGE_REQUEST;
+                    challenge_req.srcAddr = this->addr;
+                    challenge_req.nonce = static_cast<uint32_t>(std::random_device{}());
+                    challenge_req.timestamp = std::chrono::system_clock::now();
+                    challenge_req.challenge_data = generateChallengeData();
 
-            //         // Store the challenge for later verification
-            //         pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
+                    // Store the challenge for later verification
+                    pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
 
-            //         std::string serialized = challenge_req.serialize();
-            //         if (sendData(srcAddr, serialized) != 0) {
-            //             logger->error("Failed to send challenge request to {}", srcAddr);
-            //             continue;
-            //         }
+                    std::string serialized = challenge_req.serialize();
+                    if (sendData(srcAddr, serialized) != 0) {
+                        logger->error("Failed to send challenge request to {}", srcAddr);
+                        continue;
+                    }
                     
-            //         logger->debug("Challenge request sent to {}", srcAddr);
-            //         continue;
-            //     } catch (const std::exception& e) {
-            //         logger->error("Failed to create challenge request: {}", e.what());
-            //         continue;
-            //     }
-            // }
+                    logger->debug("Challenge request sent to {}", srcAddr);
+                    // continue;
+                } catch (const std::exception& e) {
+                    logger->error("Failed to create challenge request: {}", e.what());
+                    continue;
+                }
+            }
 
             // Process validated messages
             try {
@@ -194,14 +189,6 @@ void drone::clientResponseThread() {
                     case DATA:
                         // logger->info("Processing validated data message from {}", srcAddr);
                         dataHandler(jsonData);
-                        break;
-                    case INIT_ROUTE_DISCOVERY:
-                        // logger->info("Processing validated route discovery request from {}", srcAddr);
-                        {
-                            GCS_MESSAGE ctl;
-                            ctl.deserialize(jsonData);
-                            initRouteDiscovery(ctl.destAddr);
-                        }
                         break;
                     case LEAVE_NOTIFICATION:
                         // logger->info("Processing validated leave notification from {}", srcAddr);
