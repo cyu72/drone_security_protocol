@@ -221,6 +221,7 @@ class drone {
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
         const uint8_t max_seq_count = std::stoul((std::getenv("MAX_SEQ_COUNT")));
         const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
+        const uint8_t DISCOVERY_INTERVAL = std::stoul((std::getenv("DISCOVERY_INTERVAL")));
 
         UDPInterface udpInterface;
         TCPInterface tcpInterface;

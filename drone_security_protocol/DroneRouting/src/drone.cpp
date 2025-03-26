@@ -136,6 +136,9 @@ void drone::clientResponseThread() {
                 ctl.deserialize(jsonData);
                 initRouteDiscovery(ctl.destAddr);
                 continue;
+            } else if (messageType == VERIFY_ROUTE) {
+                verifyRouteHandler(jsonData);
+                continue;
             }
             // For all other message types, check if sender is validated
             if (!jsonData.contains("srcAddr")) {
@@ -194,10 +197,6 @@ void drone::clientResponseThread() {
                         // logger->info("Processing validated leave notification from {}", srcAddr);
                         leaveHandler(jsonData);
                         break;
-                    case VERIFY_ROUTE:
-                        // logger->info("Processing validated route verification request from {}", srcAddr);
-                        verifyRouteHandler(jsonData);
-                        break;
                     case EXIT:
                         // logger->info("Processing validated exit request from {}", srcAddr);
                         std::exit(0);
@@ -239,7 +238,7 @@ void drone::leaveHandler(json& data) {
         
         {
             std::lock_guard<std::mutex> lock(routingTableMutex);
-            tesla.routingTable.cleanup();
+            tesla.routingTable.remove(leave_msg.srcAddr);
         }
         
         {
@@ -625,6 +624,16 @@ void drone::routeRequestHandler(json& data){
                 logger->error("Calculated: {}", hashRes);
                 return;
             }
+
+            if (msg.ttl <= 0) {
+                logger->warn("Dropping RREQ: TTL exceeded");
+                return;
+            }
+
+            if (msg.hopCount >= this->max_hop_count) {
+                logger->debug("Dropping RREQ: Maximum hop count reached");
+                return;
+            }
         }
 
         std::unique_ptr<HashTree> tree;
@@ -941,12 +950,14 @@ void drone::neighborDiscoveryHelper(){
     udpInterface.broadcast(msg);
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr, true).serialize();
     logger->info("Broadcasting Authenticator Init Message: {}", msg);
+    auto phaseStartTime = std::chrono::steady_clock::now();
 
-    while(true){
+    while(std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - phaseStartTime).count() < DISCOVERY_INTERVAL){
+        // Modification of this loop could allow for multiple discovery phases
         sleep(5);
         {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
-            // this->tesla.routingTable.cleanup();
         }
 
         {
@@ -959,12 +970,7 @@ void drone::neighborDiscoveryHelper(){
 
 void drone::neighborDiscoveryFunction(){
     /* HashChain is generated where the most recent hashes are stored in the front (Eg. 0th index is the most recent hash)
-    
-    Temp: Hardcoding number of hashes in hashChain (50 seqNums * 7 max hop distance) = 350x hashed
-        What happens when we reach the end of the hash chain?
-        Skipping the step to verify authenticity of drone (implement later, not very important) 
-        
-    TODO: Include function that dynamically generates hashChain upon nearing depletion    
+        Note: Code does not have implementation if the hash chain is exhausted.
         */
     unsigned char hBuf[56];
     RAND_bytes(hBuf, sizeof(hBuf));
@@ -1036,11 +1042,6 @@ void drone::leaveSwarm() {
     {
         std::lock_guard<std::mutex> lock(validationMutex);
         validatedNodes.clear();
-    }
-    
-    {
-        std::lock_guard<std::mutex> lock(routingTableMutex);
-        tesla.routingTable.cleanup();
     }
 }
 

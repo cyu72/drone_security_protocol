@@ -28,6 +28,7 @@ parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='har
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
+parser.add_argument('--discovery_interval', type=int, default=120, help='Set the discovery interval for drone in seconds')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
@@ -414,6 +415,8 @@ spec:
           value: "{gcs_ip}"
         - name: DRONE_COUNT
           value: "{args.drone_count}"
+        - name: DISCOVERY_INTERVAL
+          value: "{args.discovery_interval}"
       ports:
         - name: action-port
           protocol: TCP
