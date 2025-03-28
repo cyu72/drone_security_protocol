@@ -173,6 +173,20 @@ class drone {
                 std::deque<TimedHash> timed_hash_chain;
         };
         TESLA tesla;
+        struct NetworkNode {
+            std::string drone_id;
+            std::string certificate;
+            std::string manufacturer_id;
+            std::string issued_at;
+            std::string valid_until;
+        };
+        std::unordered_map<std::string, NetworkNode> networkNodes;
+        std::mutex networkNodesMutex;
+        bool requestNetworkNodes();
+        void requestNetworkNodesIfLeader();
+
+        std::vector<NetworkNode> getNetworkNodes();
+        bool isNodeInNetwork(const std::string& droneId);
 
         string addr;
         int port;
