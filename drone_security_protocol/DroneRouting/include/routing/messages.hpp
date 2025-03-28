@@ -360,15 +360,17 @@ struct RREP : public MESSAGE {
 
 };
 
-struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the future with TESLA_MESSAGE
+struct INIT_MESSAGE : public MESSAGE {
     enum INIT_MODE {
         AUTH,
-        TESLA
+        TESLA,
+        LEADER
     };
     INIT_MODE mode;
     string hash;
     string srcAddr;
     int disclosure_time;
+    bool is_leader;
 
     INIT_MESSAGE() {
         this->type = HELLO;
@@ -390,12 +392,19 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         this->mode = TESLA;
     }
 
+    void set_leader_init(string srcAddr, bool leader_status) {
+        this->srcAddr = srcAddr;
+        this->is_leader = leader_status;
+        this->mode = LEADER;
+    }
+
     string serialize() const override {
         json j = json{
             {"type", this->type},
             {"hash", this->hash},
             {"srcAddr", this->srcAddr},
-            {"mode", this->mode}
+            {"mode", this->mode},
+            {"is_leader", this->is_leader}
         };
 
         if (this->mode == TESLA) {
@@ -410,11 +419,18 @@ struct INIT_MESSAGE : public MESSAGE { // Can possibly collapse this in the futu
         this->hash = j["hash"];
         this->srcAddr = j["srcAddr"];
         this->mode = j["mode"];
+        
+        // Add deserialization for is_leader field
+        if (j.contains("is_leader")) {
+            this->is_leader = j["is_leader"];
+        } else {
+            this->is_leader = false;
+        }
+        
         if (this->mode == TESLA) {
             this->disclosure_time = j["disclosure_time"];
         }
     }
-    
 };
 
 struct DATA_MESSAGE : public MESSAGE {

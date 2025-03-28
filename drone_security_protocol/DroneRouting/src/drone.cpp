@@ -8,6 +8,9 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->nodeID = nodeID;
     this->seqNum = 1;
 
+    this->isLeader = (std::getenv("IS_LEADER") != nullptr && 
+    std::string(std::getenv("IS_LEADER")) == "true");
+
     pki_client = std::make_unique<PKIClient>(
         this->addr,
         "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
@@ -24,8 +27,6 @@ void drone::clientResponseThread() {
     while (running) {
         json jsonData;
         std::string rawMessage;
-
-        // Scope for queue access
         {
             std::unique_lock<std::mutex> lock(queueMutex);
             cv.wait(lock, [this] { return !messageQueue.empty() || !running; });
@@ -128,6 +129,10 @@ void drone::clientResponseThread() {
             }
 
             if (messageType == HELLO) {
+                if (!this->discoveryPhaseActive.load()){
+                    logger->warn("Discovery phase inactive, ignoring message");
+                    return;
+                }
                 initMessageHandler(jsonData);
                 continue;
             } else if (messageType == INIT_ROUTE_DISCOVERY) {
@@ -157,7 +162,6 @@ void drone::clientResponseThread() {
                     challenge_req.timestamp = std::chrono::system_clock::now();
                     challenge_req.challenge_data = generateChallengeData();
 
-                    // Store the challenge for later verification
                     pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
 
                     std::string serialized = challenge_req.serialize();
@@ -178,27 +182,21 @@ void drone::clientResponseThread() {
             try {
                 switch(messageType) {
                     case ROUTE_REQUEST:
-                        // logger->info("Processing validated RREQ from {}", srcAddr);
                         routeRequestHandler(jsonData);
                         break;
                     case ROUTE_REPLY:
-                        // logger->info("Processing validated RREP from {}", srcAddr);
                         routeReplyHandler(jsonData);
                         break;
                     case ROUTE_ERROR:
-                        // logger->info("Processing validated RERR from {}", srcAddr);
                         routeErrorHandler(jsonData);
                         break;
                     case DATA:
-                        // logger->info("Processing validated data message from {}", srcAddr);
                         dataHandler(jsonData);
                         break;
                     case LEAVE_NOTIFICATION:
-                        // logger->info("Processing validated leave notification from {}", srcAddr);
                         leaveHandler(jsonData);
                         break;
                     case EXIT:
-                        // logger->info("Processing validated exit request from {}", srcAddr);
                         std::exit(0);
                         break;
                     default:
@@ -438,10 +436,6 @@ void drone::routeErrorHandler(json& data){
     } else {
         logger->error("Invalid Tesla Verification");
     }
-
-    // extra step: if it does, back check the tesla key until we reach the original key; (if it does replace it?) 
-
-    // neighbor case
 }
 
 void drone::verifyRouteHandler(json& data){
@@ -524,12 +518,17 @@ void drone::initRouteDiscovery(const string& destAddr){
 }
 
 void drone::initMessageHandler(json& data) {
-/*Creates a routing table entry for each authenticator & tesla msg received*/
+    /*Creates a routing table entry for each authenticator & tesla msg received*/
     // std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
     // if (std::chrono::duration_cast<std::chrono::seconds>(
     //     std::chrono::steady_clock::now() - helloRecvTimer).count() > helloRecvTimeout) {
     //     return;
     // }
+
+    if (!this->discoveryPhaseActive.load()){
+        logger->warn("Discovery phase inactive, ignoring message");
+        return;
+    }
 
     INIT_MESSAGE msg;
     msg.deserialize(data);
@@ -540,6 +539,13 @@ void drone::initMessageHandler(json& data) {
         this->tesla.routingTable[msg.srcAddr].setTeslaInfo(msg.hash, 
             std::chrono::seconds(msg.disclosure_time));
         this->tesla.routingTable[msg.srcAddr].print();
+    } else if (msg.mode == INIT_MESSAGE::LEADER) {
+        {
+            std::lock_guard<std::mutex> lock(leaderMutex);
+            this->current_leader = msg.is_leader;
+        }
+        logger->info("Received leader announcement from {}: isLeader={}", 
+                    msg.srcAddr, msg.is_leader);
     } else {
         std::lock_guard<std::mutex> rtLock(this->routingTableMutex);
         this->tesla.routingTable.insert(msg.srcAddr, 
@@ -942,14 +948,39 @@ string drone::sha256(const string& inn){
     return ss.str();
 }
 
+void drone::broadcastLeaderStatus() {
+    if (!this->isLeader) {
+        logger->debug("Not a leader, skipping leader broadcast");
+        return;
+    }
+    
+    INIT_MESSAGE leader_msg;
+    leader_msg.set_leader_init(this->addr, true);
+    
+    string serialized = leader_msg.serialize();
+    logger->info("Broadcasting leader status: {}", serialized);
+    udpInterface.broadcast(serialized);
+}
+
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
     msg = this->tesla.init_tesla(this->addr).serialize();
     logger->info("Broadcasting TESLA Init Message: {}", msg);
     udpInterface.broadcast(msg);
+    
     msg = INIT_MESSAGE(this->hashChainCache.front(), this->addr, true).serialize();
     logger->info("Broadcasting Authenticator Init Message: {}", msg);
+    
+    // Add leader broadcast if this node is a leader
+    if (this->isLeader) {
+        INIT_MESSAGE leader_msg;
+        leader_msg.set_leader_init(this->addr, true);
+        string leader_announcement = leader_msg.serialize();
+        logger->info("Broadcasting leader announcement: {}", leader_announcement);
+        udpInterface.broadcast(leader_announcement);
+    }
+    
     auto phaseStartTime = std::chrono::steady_clock::now();
 
     while(std::chrono::duration_cast<std::chrono::seconds>(
@@ -964,8 +995,16 @@ void drone::neighborDiscoveryHelper(){
             std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
             helloRecvTimer = std::chrono::steady_clock::now();
             udpInterface.broadcast(msg);
+            
+            // Periodically broadcast leader status during discovery phase
+            if (this->isLeader) {
+                INIT_MESSAGE leader_msg;
+                leader_msg.set_leader_init(this->addr, true);
+                udpInterface.broadcast(leader_msg.serialize());
+            }
         }
     }
+    this->discoveryPhaseActive.store(false);
 }
 
 void drone::neighborDiscoveryFunction(){
@@ -983,7 +1022,6 @@ void drone::neighborDiscoveryFunction(){
     for (int i = 0; i < hashIterations; ++i) {
         hash = sha256(hash);
         this->hashChainCache.push_front(hash);
-        // cout << "Hash: " << hash << endl;
     }
 
     auto resetTableTimer = std::chrono::steady_clock::now();
@@ -1099,7 +1137,6 @@ void drone::start() {
         if (ipc_server) {
             ipc_server->stop();
         }
-        // Join all threads before destruction
         for (auto& thread : threads) {
             if (thread.joinable()) {
                 thread.join();

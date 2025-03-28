@@ -28,7 +28,9 @@ parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='har
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
-parser.add_argument('--discovery_interval', type=int, default=120, help='Set the discovery interval for drone in seconds')
+parser.add_argument('--discovery_interval', type=int, default=360, help='Set the discovery interval for drone in seconds')
+parser.add_argument('--leader_drones', type=str, default='1,5,11', 
+                    help='Comma-separated list of drone IDs that should be leaders')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
@@ -188,14 +190,6 @@ def partition_grid(matrix, leader_drones):
     
     print(f"Partitions: {partitions}")
     return partitions
-
-def select_leader_drones(matrix, num_leaders):
-    if args.grid_type == 'random':
-        drones = [(matrix[i][j], i, j) for i in range(len(matrix)) for j in range(len(matrix[i])) if matrix[i][j] != 0]
-        return random.sample(drones, min(num_leaders, len(drones)))
-    else:
-        hardcoded_leaders = [(1, 0, 0), (5, 4, 0), (11, 9, 0)]
-        return hardcoded_leaders[:num_leaders]
 
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
@@ -417,6 +411,8 @@ spec:
           value: "{args.drone_count}"
         - name: DISCOVERY_INTERVAL
           value: "{args.discovery_interval}"
+        - name: IS_LEADER
+          value: "{'true' if num in [int(id) for id in args.leader_drones.split(',')] else 'false'}"
       ports:
         - name: action-port
           protocol: TCP
@@ -594,41 +590,47 @@ data:
             time.sleep(5)
             setup_port_forwarding(services)
 
-            num_leaders = 3
-            leader_drones = select_leader_drones(matrix, num_leaders)
-            partitions = partition_grid(matrix, leader_drones)
+            leader_drones_ids = [int(id) for id in args.leader_drones.split(',')]
+            leader_drones = []
+            for i in range(len(matrix)):
+                for j in range(len(matrix[i])):
+                    if matrix[i][j] != 0 and matrix[i][j] in leader_drones_ids:
+                        leader_drones.append((matrix[i][j], i, j))
 
-            for service in services.items:
-                if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
-                    drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
-                    nodePort = 30000 + drone_number
-                    print(f"Service: {service.metadata.name}")
+            print(f"Selected leader drones: {leader_drones}")
+            # partitions = partition_grid(matrix, leader_drones)
 
-                    for ingress in service.status.load_balancer.ingress:
-                        url = f"http://127.0.0.1:{nodePort}"
-                        print(f"Sending request to {url}")
+            # for service in services.items:
+            #     if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
+            #         drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
+            #         nodePort = 30000 + drone_number
+            #         print(f"Service: {service.metadata.name}")
 
-                        is_leader = any(drone[0] == drone_number for drone in leader_drones)
-                        data = {"is_leader": is_leader}
+            #         for ingress in service.status.load_balancer.ingress:
+            #             url = f"http://127.0.0.1:{nodePort}"
+            #             print(f"Sending request to {url}")
 
-                        if is_leader:
-                            leader_index = next(i for i, drone in enumerate(leader_drones) if drone[0] == drone_number)
-                            partition = partitions[leader_index]
-                            data["partition"] = {
-                                "start_row": partition["start_row"],
-                                "end_row": partition["end_row"],
-                                "start_col": partition["start_col"],
-                                "end_col": partition["end_col"]
-                            }
+            #             is_leader = drone_number in [int(id) for id in args.leader_drones.split(',')]
+            #             data = {"is_leader": is_leader} 
 
-                        try:
-                            response = requests.post(url, json=data)
-                            response.raise_for_status()
-                            print(f"Sent {'leader' if is_leader else 'follower'} info to Drone {drone_number}")
-                        except requests.exceptions.RequestException as e:
-                            print(f"Failed to send info to Drone {drone_number}: {e}")
-            for process in processes:
-                process.terminate()
+            #             if is_leader:
+            #                 leader_index = next(i for i, drone in enumerate(leader_drones) if drone[0] == drone_number)
+            #                 partition = partitions[leader_index]
+            #                 data["partition"] = {
+            #                     "start_row": partition["start_row"],
+            #                     "end_row": partition["end_row"],
+            #                     "start_col": partition["start_col"],
+            #                     "end_col": partition["end_col"]
+            #                 }
+
+            #             try:
+            #                 response = requests.post(url, json=data)
+            #                 response.raise_for_status()
+            #                 print(f"Sent {'leader' if is_leader else 'follower'} info to Drone {drone_number}")
+            #             except requests.exceptions.RequestException as e:
+            #                 print(f"Failed to send info to Drone {drone_number}: {e}")
+            # for process in processes:
+            #     process.terminate()
             break
 
         else:

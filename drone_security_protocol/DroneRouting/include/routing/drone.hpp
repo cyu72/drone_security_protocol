@@ -228,6 +228,7 @@ class drone {
         std::unique_ptr<IPCServer> ipc_server;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
+        std::atomic<bool> discoveryPhaseActive{true};
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
         std::mutex helloRecvTimerMutex, routingTableMutex;
 
@@ -243,9 +244,13 @@ class drone {
         bool isValidatedSender(const std::string& sender);
         void markSenderAsValidated(const std::string& sender);
         std::vector<uint8_t> generateChallengeData(size_t length = 32);
-        void challengeResponseHandler(json& data);
 
         void handleIPCMessage(const std::string&);
+
+        bool isLeader = false;
+        std::string current_leader;
+        std::mutex leaderMutex;
+        void broadcastLeaderStatus();
 };
 
 #endif
