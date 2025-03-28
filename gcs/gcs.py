@@ -21,13 +21,15 @@ class GCS:
         self.crypto_utils = CryptoUtils()
         self.app = Flask(__name__)
         self.cert_validity_minutes = int(os.getenv('CERT_VALIDITY_MINUTES', '59'))
-        self.skip_verification = os.getenv('SKIP_VERIFICATION', 'false').lower() == 'true'
+        self.skip_verification = os.getenv('SKIP_VERIFICATION', 'false').lower() == 'true' # Skips hardware verification for each node
         self.setup_routes()
         self.private_key, self.public_key = self.crypto_utils.generate_key_pair()
         self._ensure_pki_infrastructure()
         self._load_pki_materials()
         self.allowed_drones = set()
         self._start_bootstrap_phase()
+        self.issued_certificates = {}
+        self.leader_drones = set() # Note: No included implementation for updating a leader note
 
     def _start_bootstrap_phase(self):
         """Start the bootstrap phase for certificate enrollment"""
@@ -60,6 +62,36 @@ class GCS:
                     
                 except Exception as e:
                     return jsonify({'status': 'error', 'message': str(e)}), 500
+                        
+            @self.app.route('/get_network_nodes', methods=['POST'])
+            def get_network_nodes():
+                try:
+                    data = request.get_json()
+                    requesting_drone_id = data.get('drone_id')
+                    auth_token = data.get('auth_token')  # This could be signed with the drone's private key
+                    
+                    # Verify the drone is a leader
+                    if not self.is_leader_drone(requesting_drone_id, auth_token):
+                        return jsonify({'status': 'error', 'message': 'Unauthorized - not a leader drone'}), 403
+                    
+                    # Return the list of nodes and their certificates
+                    return jsonify({
+                        'status': 'success',
+                        'nodes': self.get_network_node_list()
+                    }), 200
+                    
+                except Exception as e:
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                
+    def is_leader_drone(self, drone_id: str, auth_token: str) -> bool:
+        """Verify if the requesting drone is a leader"""
+        # For basic implementation, just check if the drone ID is in our leader set
+        # In a more secure implementation, validate the auth_token cryptographically
+        return drone_id in self.leader_drones
+
+    def get_network_node_list(self) -> dict:
+        """Get the list of all nodes and their certificates"""
+        return self.issued_certificates
 
     def _get_name_attribute(self, name: x509.Name, oid: NameOID) -> Optional[str]:
         """Safely extract name attribute from certificate subject/issuer"""
@@ -225,6 +257,10 @@ class GCS:
                 'version': cert.version.name
             }
         }
+    
+    def register_leader(self, drone_id: str):
+        self.leader_drones.add(drone_id)
+        self.logger.info(f"Registered {drone_id} as a leader drone")
 
     def generate_certificate(self, csr: x509.CertificateSigningRequest, drone_id: str, manufacturer_id: str) -> x509.Certificate:
         builder = x509.CertificateBuilder()
@@ -244,7 +280,23 @@ class GCS:
                 crl_sign=False, encipher_only=False,
                 decipher_only=False
             ), critical=True)
-        return builder.sign(private_key=self.ca_private_key, algorithm=hashes.SHA256())
+        cert = builder.sign(private_key=self.ca_private_key, algorithm=hashes.SHA256())
+        cert_data = {
+            'certificate': cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
+            'drone_id': drone_id,
+            'manufacturer_id': manufacturer_id,
+            'issued_at': datetime.now(timezone.utc).isoformat(),
+            'valid_until': (now + timedelta(minutes=self.cert_validity_minutes)).isoformat()
+        }
+        self.issued_certificates[drone_id] = cert_data
+        
+        # Check if the drone should be a leader
+        if os.getenv('LEADER_DRONES', '').split(','):
+            leader_ids = [id.strip() for id in os.getenv('LEADER_DRONES', '').split(',')]
+            if drone_id in leader_ids:
+                self.register_leader(drone_id)
+        
+        return cert
 
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port)

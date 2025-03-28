@@ -1051,6 +1051,120 @@ void drone::neighborDiscoveryFunction(){
     }
 }
 
+bool drone::requestNetworkNodes() {
+    if (!this->isLeader) {
+        logger->warn("Non-leader drone attempting to request network nodes");
+        return false;
+    }
+    
+    if (pki_client->needsCertificate()) {
+        logger->warn("Cannot request network nodes - no valid certificate yet");
+        return false;
+    }
+    
+    try {
+        // Get the GCS URL from environment or use default
+        std::string gcs_host = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : "gcs-service.default";
+        
+        // Prepare the request
+        httplib::Client client(gcs_host, 5000);
+        client.set_connection_timeout(5);
+        client.set_read_timeout(5);
+        client.set_write_timeout(5);
+        
+        // Get our certificate
+        auto cert = pki_client->getCertificate();
+        if (cert.pem.empty()) {
+            throw std::runtime_error("No valid certificate available");
+        }
+        
+        // Create the request body
+        nlohmann::json request_body = {
+            {"drone_id", this->addr},
+            {"certificate_pem", cert.pem}
+        };
+        
+        // Send the request
+        logger->info("Leader drone requesting network nodes from GCS");
+        auto res = client.Post("/get_network_nodes", request_body.dump(), "application/json");
+        
+        if (!res || res->status != 200) {
+            std::string error_msg = res ? 
+                "Request failed: " + std::to_string(res->status) + " - " + res->body : 
+                "No response from server";
+            throw std::runtime_error(error_msg);
+        }
+        
+        // Parse the response
+        auto response = nlohmann::json::parse(res->body);
+        
+        if (response["status"] != "success") {
+            throw std::runtime_error("Request error: " + response["message"].get<std::string>());
+        }
+        
+        // Process the nodes
+        std::lock_guard<std::mutex> lock(networkNodesMutex);
+        networkNodes.clear();
+        
+        auto nodes = response["nodes"];
+        for (auto& [drone_id, node_data] : nodes.items()) {
+            NetworkNode node;
+            node.drone_id = drone_id;
+            node.certificate = node_data["certificate"];
+            node.manufacturer_id = node_data["manufacturer_id"];
+            node.issued_at = node_data["issued_at"];
+            node.valid_until = node_data["valid_until"];
+            
+            networkNodes[drone_id] = std::move(node);
+        }
+        
+        logger->info("Successfully retrieved {} network nodes", networkNodes.size());
+        return true;
+        
+    } catch (const std::exception& e) {
+        logger->error("Failed to retrieve network nodes: {}", e.what());
+        return false;
+    }
+}
+
+std::vector<drone::NetworkNode> drone::getNetworkNodes() {
+    std::vector<NetworkNode> result;
+    std::lock_guard<std::mutex> lock(networkNodesMutex);
+    
+    result.reserve(networkNodes.size());
+    for (const auto& [_, node] : networkNodes) {
+        result.push_back(node);
+    }
+    
+    return result;
+}
+
+bool drone::isNodeInNetwork(const std::string& droneId) {
+    std::lock_guard<std::mutex> lock(networkNodesMutex);
+    return networkNodes.find(droneId) != networkNodes.end();
+}
+
+void drone::requestNetworkNodesIfLeader() {
+    // Only perform this check once after we've received a certificate
+    static bool requested = false;
+    
+    if (!requested && isLeader && !pki_client->needsCertificate()) {
+        requested = true;
+        if (requestNetworkNodes()) {
+            logger->info("Successfully initialized network nodes as leader");
+        } else {
+            logger->error("Failed to initialize network nodes as leader");
+            
+            // Optional retry mechanism
+            while (!requestNetworkNodes()) {
+                logger->warn("Retrying to initialize network nodes as leader...");
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+            }
+            logger->info("Successfully initialized network nodes as leader after retrying");
+        }
+    }
+}
+
 void drone::leaveSwarm() {
     LeaveMessage leave_msg;
     leave_msg.srcAddr = this->addr;
@@ -1098,7 +1212,7 @@ void drone::start() {
         init_promise.set_value();
         logger->info("Promise value set");
         
-        // Use join-able threads instead of detached
+        threads.emplace_back([this](){ requestNetworkNodesIfLeader(); });
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });
         

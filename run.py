@@ -470,6 +470,8 @@ spec:
             file.write(delim)
             nodePort += 1
 
+        leader_drone_ids = args.leader_drones.split(',')
+        formatted_leader_drones = ','.join([f"drone{id.strip()}-service.default" for id in leader_drone_ids])
         gcs = f"""apiVersion: v1
 kind: Pod
 metadata:
@@ -489,6 +491,8 @@ spec:
       env:
         - name: SKIP_VERIFICATION
           value: "{args.SKIP_VERIFICATION}"
+        - name: LEADER_DRONES
+          value: "{formatted_leader_drones}"
       ports:
         - name: main-port
           protocol: TCP
