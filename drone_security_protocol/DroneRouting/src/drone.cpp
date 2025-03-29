@@ -8,6 +8,9 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->nodeID = nodeID;
     this->seqNum = 1;
 
+    this->leaderFunctionalityEnabled = (std::getenv("ENABLE_LEADERSHIP") == nullptr || 
+    std::string(std::getenv("ENABLE_LEADERSHIP")) != "false");
+
     this->isLeader = (std::getenv("IS_LEADER") != nullptr && 
     std::string(std::getenv("IS_LEADER")) == "true");
 
@@ -65,7 +68,10 @@ void drone::clientResponseThread() {
                     continue;
                 }
                 std::string srcAddr = jsonData["srcAddr"].get<std::string>();
-                
+                if (srcAddr == this->addr) {
+                    logger->debug("Ignoring message from self");
+                    continue;
+                }
                 if (!jsonData.contains("type")) {
                     logger->error("Message missing type field");
                     continue;
@@ -131,7 +137,7 @@ void drone::clientResponseThread() {
             if (messageType == HELLO) {
                 if (!this->discoveryPhaseActive.load()){
                     logger->warn("Discovery phase inactive, ignoring message");
-                    return;
+                    continue;
                 }
                 initMessageHandler(jsonData);
                 continue;
@@ -152,7 +158,6 @@ void drone::clientResponseThread() {
             }
             std::string srcAddr = jsonData["recvAddr"].get<std::string>();
             if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
-                logger->debug("Initiating validation for unvalidated sender {}", srcAddr);
                 try {
                     ChallengeRequest challenge_req;
                     challenge_req.type = CERTIFICATE_VALIDATION;
@@ -176,6 +181,10 @@ void drone::clientResponseThread() {
                     logger->error("Failed to create challenge request: {}", e.what());
                     continue;
                 }
+                if (!this->current_leader.empty() && this->leaderFunctionalityEnabled && !isValidSwarmNode(srcAddr)) { // This allows communication between nodes with no leader for demonstration purposes
+                    logger->info("Initiating validation for unvalidated sender {}", srcAddr);
+                    // Add swarm membership check
+                }
             }
 
             // Process validated messages
@@ -195,6 +204,12 @@ void drone::clientResponseThread() {
                         break;
                     case LEAVE_NOTIFICATION:
                         leaveHandler(jsonData);
+                        break;
+                    case JOIN_REQUEST:
+                        joinRequestHandler(jsonData);
+                        break;
+                    case JOIN_RESPONSE:
+                        joinResponseHandler(jsonData);
                         break;
                     case EXIT:
                         std::exit(0);
@@ -525,11 +540,6 @@ void drone::initMessageHandler(json& data) {
     //     return;
     // }
 
-    if (!this->discoveryPhaseActive.load()){
-        logger->warn("Discovery phase inactive, ignoring message");
-        return;
-    }
-
     INIT_MESSAGE msg;
     msg.deserialize(data);
     logger->debug("HELLO from {} @ {:%H:%M:%S}", msg.srcAddr, std::chrono::system_clock::now());
@@ -569,9 +579,37 @@ bool drone::isValidatedSender(const std::string& senderAddr) {
 }
 
 void drone::markSenderAsValidated(const std::string& senderAddr) {
-    std::lock_guard<std::mutex> lock(this->validationMutex);
-    validatedNodes.insert(senderAddr);
-    logger->info("Sender {} marked as validated", senderAddr);
+    {
+        std::lock_guard<std::mutex> lock(this->validationMutex);
+        validatedNodes.insert(senderAddr);
+        logger->info("Sender {} marked as validated", senderAddr);
+    }
+
+    if (this->leaderFunctionalityEnabled && this->isLeader && this->swarmPhase.load()) {
+        /* This implementation assumes that after validation, 
+        we want to immediately handle any pending join requests from this node */
+        JoinResponseMessage response;
+        response.srcAddr = this->addr;
+        response.timestamp = std::chrono::system_clock::now();
+        
+        // Compile list of valid nodes
+        {
+            std::lock_guard<std::mutex> lock(validationMutex);
+            response.validNodeList.assign(validatedNodes.begin(), validatedNodes.end());
+            response.validNodeList.push_back(this->addr);
+        }
+        
+        std::thread([this, senderAddr, response]() {
+            // Clone response for thread safety
+            auto responseCopy = response;
+            if (sendData(senderAddr, responseCopy.serialize()) != 0) {
+                logger->error("Failed to send join response after validation to {}", senderAddr);
+            } else {
+                logger->info("Sent join response with {} valid nodes to newly validated node {}", 
+                            responseCopy.validNodeList.size(), senderAddr);
+            }
+        }).detach();
+    }
 }
 
 void drone::routeRequestHandler(json& data){
@@ -605,7 +643,7 @@ void drone::routeRequestHandler(json& data){
         }
 
         logger->debug("Checking routing table entries");
-        if (this->tesla.routingTable.find(msg.srcAddr) && this->tesla.routingTable.find(msg.recvAddr)) {
+        if (this->tesla.routingTable.find(msg.srcAddr)) {
             logger->debug("Found routing entries for src and recv addresses");
             
             if (msg.srcSeqNum <= this->tesla.routingTable.get(msg.srcAddr)->seqNum) {
@@ -623,12 +661,14 @@ void drone::routeRequestHandler(json& data){
                 hashRes = sha256(hashRes);
                 logger->debug("Hash iteration {}: {}", i, hashRes);
             }
-
-            if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
-                logger->error("Hash verification failed");
-                logger->error("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
-                logger->error("Calculated: {}", hashRes);
-                return;
+            
+            if (this->tesla.routingTable.find(msg.recvAddr)) {
+                if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
+                    logger->error("Hash verification failed");
+                    logger->error("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+                    logger->error("Calculated: {}", hashRes);
+                    return;
+                }
             }
 
             if (msg.ttl <= 0) {
@@ -1005,6 +1045,21 @@ void drone::neighborDiscoveryHelper(){
         }
     }
     this->discoveryPhaseActive.store(false);
+    this->swarmPhase.store(true);
+    if (this->leaderFunctionalityEnabled){
+        logger->info("Discovery phase complete, entering join phase");
+    
+        // If this node is not a leader, try to join a swarm
+        if (!this->isLeader && !this->hasJoinedSwarm) {
+            // Start a thread to periodically try to join until successful
+            threads.emplace_back([this]() {
+                while (swarmPhase.load() && !this->hasJoinedSwarm) {
+                    this->sendJoinRequest();
+                    std::this_thread::sleep_for(std::chrono::seconds(30));
+                }
+            });
+        }
+    }
 }
 
 void drone::neighborDiscoveryFunction(){
@@ -1165,6 +1220,151 @@ void drone::requestNetworkNodesIfLeader() {
     }
 }
 
+bool drone::isValidSwarmNode(const std::string& addr) {
+    std::lock_guard<std::mutex> lock(validNodeListMutex);
+    return std::find(validNodeList.begin(), validNodeList.end(), addr) != validNodeList.end() 
+           || addr == this->addr;
+}
+
+void drone::sendJoinRequest() {
+    if (pki_client->needsCertificate()) {
+        logger->warn("Cannot send join request - no valid certificate yet");
+        return;
+    }
+    
+    try {
+        // Get current leader
+        std::string leaderAddr;
+        {
+            std::lock_guard<std::mutex> lock(leaderMutex);
+            if (current_leader.empty()) {
+                logger->debug("No leader known, can't send join request");
+                return;
+            }
+            leaderAddr = current_leader;
+        }
+        
+        JoinRequestMessage joinReq;
+        joinReq.srcAddr = this->addr;
+        joinReq.timestamp = std::chrono::system_clock::now();
+        
+        logger->info("Sending join request to leader: {}", leaderAddr);
+        if (sendData(leaderAddr, joinReq.serialize()) != 0) {
+            logger->error("Failed to send join request to leader");
+        }
+    } catch (const std::exception& e) {
+        logger->error("Error sending join request: {}", e.what());
+    }
+}
+
+void drone::joinRequestHandler(json& data) {
+    if (!this->isLeader) {
+        logger->debug("Ignoring join request - not a leader");
+        return;
+    }
+    
+    try {
+        JoinRequestMessage request;
+        request.deserialize(data);
+        
+        // Verify the timestamp is recent
+        auto now = std::chrono::system_clock::now();
+        auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(
+            now - request.timestamp).count();
+        if (std::abs(time_diff) > 30) {
+            logger->warn("Received expired join request from {}", request.srcAddr);
+            return;
+        }
+        
+        // Challenge the node for PKI verification
+        if (!isValidatedSender(request.srcAddr)) {
+            logger->debug("Initiating validation for joining node {}", request.srcAddr);
+            ChallengeRequest challenge;
+            challenge.type = CERTIFICATE_VALIDATION;
+            challenge.challenge_type = CHALLENGE_REQUEST;
+            challenge.srcAddr = this->addr;
+            challenge.nonce = static_cast<uint32_t>(std::random_device{}());
+            challenge.timestamp = std::chrono::system_clock::now();
+            challenge.challenge_data = generateChallengeData();
+            
+            pki_client->storePendingChallenge(request.srcAddr, challenge.challenge_data);
+            
+            if (sendData(request.srcAddr, challenge.serialize()) != 0) {
+                logger->error("Failed to send challenge to joining node");
+                return;
+            }
+            
+            // The rest of the validation will happen asynchronously through existing challenge handlers
+            // After validation, the node will be in validatedNodes set
+            // We'll store the join request for later response
+            return;
+        }
+        
+        // If already validated, send the response immediately
+        JoinResponseMessage response;
+        response.srcAddr = this->addr;
+        response.timestamp = std::chrono::system_clock::now();
+        
+        // Compile list of valid nodes
+        {
+            std::lock_guard<std::mutex> lock(validationMutex);
+            response.validNodeList.assign(validatedNodes.begin(), validatedNodes.end());
+            response.validNodeList.push_back(this->addr);
+        }
+        
+        if (sendData(request.srcAddr, response.serialize()) != 0) {
+            logger->error("Failed to send join response to {}", request.srcAddr);
+        } else {
+            logger->info("Sent join response with {} valid nodes to {}", 
+                        response.validNodeList.size(), request.srcAddr);
+        }
+        
+    } catch (const std::exception& e) {
+        logger->error("Error processing join request: {}", e.what());
+    }
+}
+
+void drone::joinResponseHandler(json& data) {
+    try {
+        JoinResponseMessage response;
+        response.deserialize(data);
+        
+        // Verify the timestamp is recent
+        auto now = std::chrono::system_clock::now();
+        auto time_diff = std::chrono::duration_cast<std::chrono::seconds>(
+            now - response.timestamp).count();
+        if (std::abs(time_diff) > 30) {
+            logger->warn("Received expired join response from {}", response.srcAddr);
+            return;
+        }
+        
+        // Validate the sender is a leader
+        bool isValidLeader = false;
+        {
+            std::lock_guard<std::mutex> lock(leaderMutex);
+            isValidLeader = (response.srcAddr == current_leader);
+        }
+        
+        if (!isValidLeader) {
+            logger->warn("Received join response from non-leader: {}", response.srcAddr);
+            return;
+        }
+        
+        // Update the valid node list
+        {
+            std::lock_guard<std::mutex> lock(validNodeListMutex);
+            validNodeList = response.validNodeList;
+            this->hasJoinedSwarm = true;
+        }
+        
+        logger->info("Successfully joined swarm led by {}", response.srcAddr);
+        logger->info("Received valid node list with {} nodes", response.validNodeList.size());
+        
+    } catch (const std::exception& e) {
+        logger->error("Error processing join response: {}", e.what());
+    }
+}
+
 void drone::leaveSwarm() {
     LeaveMessage leave_msg;
     leave_msg.srcAddr = this->addr;
@@ -1212,7 +1412,9 @@ void drone::start() {
         init_promise.set_value();
         logger->info("Promise value set");
         
-        threads.emplace_back([this](){ requestNetworkNodesIfLeader(); });
+        if (this->leaderFunctionalityEnabled) {
+            threads.emplace_back([this](){ requestNetworkNodesIfLeader(); });
+        }
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });
         

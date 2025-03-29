@@ -36,11 +36,14 @@ enum MESSAGE_TYPE {
     DATA,
     CERTIFICATE_VALIDATION,
     LEAVE_NOTIFICATION,
-    INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
+    INIT_ROUTE_DISCOVERY,
     VERIFY_ROUTE,
     HELLO, // Broadcast Msg
     INIT_LEAVE,
-    EXIT
+    EXIT,
+    JOIN_REQUEST,
+    JOIN_RESPONSE,
+
 };
 
 struct MESSAGE {
@@ -767,6 +770,61 @@ struct LeaveMessage : public MESSAGE {
                 signature = std::move(decoded);
             }
         }
+    }
+};
+
+struct JoinRequestMessage : public MESSAGE {
+    std::string srcAddr;
+    std::chrono::system_clock::time_point timestamp;
+    
+    JoinRequestMessage() {
+        this->type = JOIN_REQUEST;
+    }
+    
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"srcAddr", this->srcAddr},
+            {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                timestamp.time_since_epoch()).count()}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->srcAddr = j["srcAddr"];
+        this->timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
+    }
+};
+
+struct JoinResponseMessage : public MESSAGE {
+    std::string srcAddr;
+    std::vector<std::string> validNodeList;
+    std::chrono::system_clock::time_point timestamp;
+    
+    JoinResponseMessage() {
+        this->type = JOIN_RESPONSE;
+    }
+    
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"srcAddr", this->srcAddr},
+            {"validNodeList", this->validNodeList},
+            {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                timestamp.time_since_epoch()).count()}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->srcAddr = j["srcAddr"];
+        this->validNodeList = j["validNodeList"].get<std::vector<std::string>>();
+        this->timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
     }
 };
 

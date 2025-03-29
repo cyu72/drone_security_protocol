@@ -29,6 +29,7 @@ parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'C
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
 parser.add_argument('--discovery_interval', type=int, default=360, help='Set the discovery interval for drone in seconds')
+parser.add_argument('--enable_leader', type=str, default='True', help='Enable leader election')
 parser.add_argument('--leader_drones', type=str, default='1,5,11', 
                     help='Comma-separated list of drone IDs that should be leaders')
 args = parser.parse_args()
@@ -413,6 +414,8 @@ spec:
           value: "{args.discovery_interval}"
         - name: IS_LEADER
           value: "{'true' if num in [int(id) for id in args.leader_drones.split(',')] else 'false'}"
+        - name: ENABLE_LEADER
+          value: "{args.enable_leader}"
       ports:
         - name: action-port
           protocol: TCP
@@ -572,6 +575,16 @@ data:
 
     time.sleep(20)
 
+    print("Waiting for drone pods to be ready...")
+    droneNum = args.drone_count
+    for num in range(1, droneNum + 1):
+        wait_command = f"kubectl wait --for=condition=ready pod drone{num} --timeout=120s"
+        try:
+            subprocess.run(wait_command, shell=True, check=True)
+            print(f"Drone{num} is ready")
+        except subprocess.CalledProcessError:
+            print(f"Warning: Timeout waiting for drone{num}")
+
     processes = []
     threads = []
 
@@ -586,12 +599,11 @@ data:
         for pod in pods.items:
             if pod.status.phase != "Running":
                 all_running = False
-                time.sleep(10)
+                time.sleep(2)
                 break
 
         if all_running:
             print("All pods are running")
-            time.sleep(5)
             setup_port_forwarding(services)
 
             leader_drones_ids = [int(id) for id in args.leader_drones.split(',')]

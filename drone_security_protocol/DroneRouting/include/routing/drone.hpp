@@ -265,6 +265,18 @@ class drone {
         std::string current_leader;
         std::mutex leaderMutex;
         void broadcastLeaderStatus();
+        bool leaderFunctionalityEnabled;
+
+        std::atomic<bool> swarmPhase{false};
+        std::vector<std::string> validNodeList;
+        std::mutex validNodeListMutex;
+        bool hasJoinedSwarm{false};
+
+        void sendJoinRequest();
+        void joinRequestHandler(json& data);
+        void joinResponseHandler(json& data);
+        bool isValidSwarmNode(const std::string& addr);
+        void transitionToJoinPhase();
 };
 
 #endif
