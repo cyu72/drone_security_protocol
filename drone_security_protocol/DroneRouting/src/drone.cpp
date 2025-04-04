@@ -59,6 +59,7 @@ void drone::clientResponseThread() {
         try {
             jsonData = json::parse(rawMessage);
             int messageType = jsonData["type"].get<int>();
+            bool isFromIPC = jsonData.contains("from_ipc") && jsonData["from_ipc"].get<bool>();
 
             // Special handling for messages that don't require validation
             if (messageType == CERTIFICATE_VALIDATION) {
@@ -134,6 +135,17 @@ void drone::clientResponseThread() {
             continue;
             }
 
+            if (isFromIPC && (messageType == INIT_ROUTE_DISCOVERY || messageType == VERIFY_ROUTE || messageType == INIT_LEAVE)) {
+                if (messageType == INIT_ROUTE_DISCOVERY) {
+                    logger->info("Processing IPC route discovery request to {}", jsonData["destAddr"].get<std::string>());
+                    initRouteDiscovery(jsonData["destAddr"].get<std::string>());
+                } else if (messageType == VERIFY_ROUTE) {
+                    verifyRouteHandler(jsonData);
+                } else if (messageType == INIT_LEAVE) {
+                    logger->info("Processing IPC leave request");
+                    leaveSwarm();
+                }
+            }
             if (messageType == HELLO) {
                 if (!this->discoveryPhaseActive.load()){
                     logger->warn("Discovery phase inactive, ignoring message");
@@ -297,9 +309,31 @@ void drone::dataHandler(json& data){
 }
 
 void drone::handleIPCMessage(const std::string& message) {
-    std::lock_guard<std::mutex> lock(queueMutex);
-    messageQueue.push(message);
-    cv.notify_one();
+    try {
+        // Parse the message as JSON
+        json jsonData = json::parse(message);
+        
+        // Add a special flag to mark this as coming from IPC
+        jsonData["from_ipc"] = true;
+        
+        // Add minimal required fields if they don't exist
+        if (!jsonData.contains("srcAddr")) {
+            jsonData["srcAddr"] = "ipc_client";
+        }
+        
+        std::lock_guard<std::mutex> lock(queueMutex);
+        messageQueue.push(jsonData.dump());
+        cv.notify_one();
+        logger->debug("Queued IPC message: {}", jsonData.dump());
+    } catch (const json::parse_error& e) {
+        // If there's a parsing error, still try to handle the raw message
+        logger->warn("Failed to parse IPC message as JSON: {}", e.what());
+        std::lock_guard<std::mutex> lock(queueMutex);
+        messageQueue.push(message);
+        cv.notify_one();
+    } catch (const std::exception& e) {
+        logger->error("Failed to process IPC message: {}", e.what());
+    }
 }
 
 void drone::broadcast(const std::string& msg) {
@@ -583,32 +617,6 @@ void drone::markSenderAsValidated(const std::string& senderAddr) {
         std::lock_guard<std::mutex> lock(this->validationMutex);
         validatedNodes.insert(senderAddr);
         logger->info("Sender {} marked as validated", senderAddr);
-    }
-
-    if (this->leaderFunctionalityEnabled && this->isLeader && this->swarmPhase.load()) {
-        /* This implementation assumes that after validation, 
-        we want to immediately handle any pending join requests from this node */
-        JoinResponseMessage response;
-        response.srcAddr = this->addr;
-        response.timestamp = std::chrono::system_clock::now();
-        
-        // Compile list of valid nodes
-        {
-            std::lock_guard<std::mutex> lock(validationMutex);
-            response.validNodeList.assign(validatedNodes.begin(), validatedNodes.end());
-            response.validNodeList.push_back(this->addr);
-        }
-        
-        std::thread([this, senderAddr, response]() {
-            // Clone response for thread safety
-            auto responseCopy = response;
-            if (sendData(senderAddr, responseCopy.serialize()) != 0) {
-                logger->error("Failed to send join response after validation to {}", senderAddr);
-            } else {
-                logger->info("Sent join response with {} valid nodes to newly validated node {}", 
-                            responseCopy.validNodeList.size(), senderAddr);
-            }
-        }).detach();
     }
 }
 
@@ -1221,9 +1229,8 @@ void drone::requestNetworkNodesIfLeader() {
 }
 
 bool drone::isValidSwarmNode(const std::string& addr) {
-    std::lock_guard<std::mutex> lock(validNodeListMutex);
-    return std::find(validNodeList.begin(), validNodeList.end(), addr) != validNodeList.end() 
-           || addr == this->addr;
+    std::lock_guard<std::mutex> lock(swarmMembersMutex);
+    return swarmMembers.find(addr) != swarmMembers.end() || addr == this->addr;
 }
 
 void drone::sendJoinRequest() {
@@ -1300,7 +1307,28 @@ void drone::joinRequestHandler(json& data) {
             return;
         }
         
-        // If already validated, send the response immediately
+        // If already validated, add to swarm members list
+        bool wasNewMember = false;
+        {
+            std::lock_guard<std::mutex> lock(swarmMembersMutex);
+            wasNewMember = swarmMembers.insert(request.srcAddr).second;
+            if (wasNewMember) {
+                logger->info("Added validated node {} to swarm members", request.srcAddr);
+            } else {
+                logger->debug("Node {} is already a swarm member", request.srcAddr);
+            }
+        }
+        
+        // Schedule propagation if this is a new member
+        if (wasNewMember) {
+            std::thread([this, requestAddr = request.srcAddr]() {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                propagateValidNodeList();
+                logger->info("Propagated updated valid node list after adding node {}", requestAddr);
+            }).detach();
+        }
+
+        // Send response only to this newly joined member
         JoinResponseMessage response;
         response.srcAddr = this->addr;
         response.timestamp = std::chrono::system_clock::now();
@@ -1357,6 +1385,15 @@ void drone::joinResponseHandler(json& data) {
             this->hasJoinedSwarm = true;
         }
         
+        // Add all nodes from the valid node list to our swarm members set
+        {
+            std::lock_guard<std::mutex> lock(swarmMembersMutex);
+            for (const auto& node : response.validNodeList) {
+                swarmMembers.insert(node);
+            }
+            logger->info("Added {} nodes to swarm members set", response.validNodeList.size());
+        }
+        
         logger->info("Successfully joined swarm led by {}", response.srcAddr);
         logger->info("Received valid node list with {} nodes", response.validNodeList.size());
         
@@ -1400,7 +1437,53 @@ void drone::leaveSwarm() {
 std::future<void> drone::getSignal() {
     logger->info("Future requested");
     return init_promise.get_future();
+}
 
+void drone::propagateValidNodeList() {
+    if (!this->isLeader) {
+        logger->warn("Non-leader drone attempting to propagate valid node list");
+        return;
+    }
+
+    JoinResponseMessage response;
+    response.srcAddr = this->addr;
+    response.timestamp = std::chrono::system_clock::now();
+
+    // Prepare the list of validated nodes
+    {
+        std::lock_guard<std::mutex> lock(validationMutex);
+        response.validNodeList.assign(validatedNodes.begin(), validatedNodes.end());
+        response.validNodeList.push_back(this->addr);
+    }
+
+    // Get the list of swarm members to send to
+    std::set<std::string> currentMembers;
+    {
+        std::lock_guard<std::mutex> lock(swarmMembersMutex);
+        currentMembers = swarmMembers;
+    }
+
+    // Don't send to self
+    currentMembers.erase(this->addr);
+
+    if (currentMembers.empty()) {
+        logger->debug("No swarm members to send valid node list to");
+        return;
+    }
+
+    logger->info("Propagating valid node list with {} nodes to {} swarm members", 
+                 response.validNodeList.size(), currentMembers.size());
+
+    // Send the list to all current swarm members
+    for (const auto& member : currentMembers) {
+        std::thread([this, member, response]() {
+            // Clone response for thread safety
+            auto responseCopy = response;
+            if (sendData(member, responseCopy.serialize()) != 0) {
+                logger->error("Failed to propagate valid node list to swarm member {}", member);
+            }
+        }).detach();
+    }
 }
 
 void drone::start() {

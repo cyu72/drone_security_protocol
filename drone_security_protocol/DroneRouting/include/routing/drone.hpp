@@ -103,6 +103,8 @@ class drone {
         int send(const string&, string, bool=false);
         void broadcast(const string& msg);
         std::future<void> getSignal();
+        // Sends the current valid node list to all swarm members
+        void propagateValidNodeList();
 
     private:
         class TESLA {
@@ -271,11 +273,16 @@ class drone {
         std::vector<std::string> validNodeList;
         std::mutex validNodeListMutex;
         bool hasJoinedSwarm{false};
+        
+        // Track confirmed swarm members (not just validated nodes)
+        std::set<std::string> swarmMembers;
+        std::mutex swarmMembersMutex;
 
         void sendJoinRequest();
         void joinRequestHandler(json& data);
         void joinResponseHandler(json& data);
         bool isValidSwarmNode(const std::string& addr);
+        void propagateValidNodeListAfterJoin(const std::string& requestAddr);
         void transitionToJoinPhase();
 };
 

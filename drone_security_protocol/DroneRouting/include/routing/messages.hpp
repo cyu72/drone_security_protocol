@@ -252,7 +252,7 @@ struct RREQ : public MESSAGE {
     RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, 
          string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash) {
         this->type = ROUTE_REQUEST;
-        this->srcAddr = srcAddr;
+        this->srcAddr = srcAddr; // address of origin
         this->recvAddr = interAddr;
         this->destAddr = destAddr;
         this->srcSeqNum = srcSeqNum;
