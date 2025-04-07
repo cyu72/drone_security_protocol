@@ -7,6 +7,7 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->port = port;
     this->nodeID = nodeID;
     this->seqNum = 1;
+    this->GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : "gcs-service.default";
 
     this->leaderFunctionalityEnabled = (std::getenv("ENABLE_LEADERSHIP") == nullptr || 
     std::string(std::getenv("ENABLE_LEADERSHIP")) != "false");
@@ -169,6 +170,28 @@ void drone::clientResponseThread() {
                 continue;
             }
             std::string srcAddr = jsonData["recvAddr"].get<std::string>();
+            
+            // If we have a leader, we check the CRL to determine if the node is valid to parse the message
+            // If we don't have a leader, we parse the message anyway
+            bool skipValidation = false;
+            
+            {
+                std::lock_guard<std::mutex> lock(leaderMutex);
+                if (this->current_leader.empty() || !this->leaderFunctionalityEnabled) {
+                    // No leader or leadership functionality disabled, skip validation and proceed with message
+                    logger->debug("No leader present or leadership disabled - processing message without CRL check");
+                    skipValidation = true;
+                } else {
+                    // We have a leader, check the CRL
+                    if (isNodeOnCRL(srcAddr)) {
+                        logger->warn("Message from revoked node {} rejected - found on CRL", srcAddr);
+                        continue; // Skip this message as the node is on the CRL
+                    }
+                    logger->debug("Node {} not found on CRL, proceeding with validation", srcAddr);
+                }
+            }
+            // If skipValidation is true (no leader), we still check for validation but don't reject if not validated
+            // If skipValidation is false (have leader), we need both validation and CRL check to pass
             if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
                 try {
                     ChallengeRequest challenge_req;
@@ -191,11 +214,21 @@ void drone::clientResponseThread() {
                     // continue;
                 } catch (const std::exception& e) {
                     logger->error("Failed to create challenge request: {}", e.what());
-                    continue;
+                    if (!skipValidation) {
+                        continue; // Only skip message if validation is required (leader present)
+                    }
                 }
-                if (!this->current_leader.empty() && this->leaderFunctionalityEnabled && !isValidSwarmNode(srcAddr)) { // This allows communication between nodes with no leader for demonstration purposes
+                if (!this->current_leader.empty() && this->leaderFunctionalityEnabled && !isValidSwarmNode(srcAddr)) {
                     logger->info("Initiating validation for unvalidated sender {}", srcAddr);
                     // Add swarm membership check
+                }
+                
+                // If skipValidation is true (no leader), allow message processing to continue
+                if (skipValidation) {
+                    logger->debug("Processing message without validation as no leader is present");
+                } else if (!isValidatedSender(srcAddr) && srcAddr != this->addr) {
+                    logger->warn("Skipping message from unvalidated sender {} while leader is present", srcAddr);
+                    continue; // Skip if we require validation but node is not validated
                 }
             }
 
@@ -617,6 +650,49 @@ void drone::markSenderAsValidated(const std::string& senderAddr) {
         std::lock_guard<std::mutex> lock(this->validationMutex);
         validatedNodes.insert(senderAddr);
         logger->info("Sender {} marked as validated", senderAddr);
+    }
+}
+
+bool drone::isNodeOnCRL(const std::string& nodeAddr) {
+    // If we have a certificate for this node, check if it's on the CRL
+    // Request CRL check from the PKI client
+    if (!this->pki_client) {
+        logger->error("PKI client not initialized");
+        return false;
+    }
+    
+    try {
+        // Attempt to retrieve node information from network nodes
+        std::lock_guard<std::mutex> lock(networkNodesMutex);
+        auto it = networkNodes.find(nodeAddr);
+        if (it == networkNodes.end()) {
+            logger->debug("Node {} not found in network nodes list", nodeAddr);
+            return false; // If we don't know about this node, assume it's not on CRL
+        }
+        
+        // Check if this node's certificate is on CRL by sending request to GCS
+        // This is a simple implementation - in a real system you might have a local CRL cache
+        httplib::Client client(this->GCS_IP, 5000); // Use the class's GCS_IP variable
+        client.set_connection_timeout(3); // Short timeout to avoid blocking communication
+        
+        auto res = client.Get("/check_crl/" + it->second.certificate);
+        if (!res || res->status != 200) {
+            logger->error("Failed to check CRL status for node {}: {}", 
+                nodeAddr, res ? std::to_string(res->status) : "connection failed");
+            return false; // On error, default to not on CRL to allow communication
+        }
+        
+        json response = json::parse(res->body);
+        bool is_revoked = response.value("revoked", false);
+        
+        if (is_revoked) {
+            logger->warn("Certificate for node {} is revoked", nodeAddr);
+        }
+        
+        return is_revoked;
+    } catch (const std::exception& e) {
+        logger->error("Error checking CRL for node {}: {}", nodeAddr, e.what());
+        return false; // On error, default to not on CRL to allow communication
     }
 }
 

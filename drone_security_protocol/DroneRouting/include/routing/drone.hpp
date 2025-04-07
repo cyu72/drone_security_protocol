@@ -36,6 +36,7 @@
 #include <condition_variable>
 #include <future>
 #include <set>
+#include "httplib.h"
 #include "hashTree.hpp"
 #include "messages.hpp"
 #include <spdlog/fmt/chrono.h>
@@ -194,6 +195,7 @@ class drone {
         int port;
         unsigned long seqNum;
         int nodeID;
+        string GCS_IP;
         std::queue<string> messageQueue;
         std::mutex queueMutex;
         std::condition_variable cv;
@@ -260,6 +262,7 @@ class drone {
         bool isValidatedSender(const std::string& sender);
         void markSenderAsValidated(const std::string& sender);
         std::vector<uint8_t> generateChallengeData(size_t length = 32);
+        bool isNodeOnCRL(const std::string& nodeAddr);
 
         void handleIPCMessage(const std::string&);
 
