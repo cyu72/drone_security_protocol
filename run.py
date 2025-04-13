@@ -88,14 +88,26 @@ def print_matrix(matrix):
 
 def get_neighbors(matrix, i, j):
     neighbors = []
-    if i > 0 and matrix[i-1][j] != 0:
+    # Check cardinal directions (up, down, left, right)
+    if i > 0 and matrix[i-1][j] != 0:  # Up
         neighbors.append(matrix[i-1][j])
-    if i < len(matrix)-1 and matrix[i+1][j] != 0:
+    if i < len(matrix)-1 and matrix[i+1][j] != 0:  # Down
         neighbors.append(matrix[i+1][j])
-    if j > 0 and matrix[i][j-1] != 0:
+    if j > 0 and matrix[i][j-1] != 0:  # Left
         neighbors.append(matrix[i][j-1])
-    if j < len(matrix[i])-1 and matrix[i][j+1] != 0:
+    if j < len(matrix[i])-1 and matrix[i][j+1] != 0:  # Right
         neighbors.append(matrix[i][j+1])
+    
+    # Check diagonal directions
+    if i > 0 and j > 0 and matrix[i-1][j-1] != 0:  # Upper-left
+        neighbors.append(matrix[i-1][j-1])
+    if i > 0 and j < len(matrix[i])-1 and matrix[i-1][j+1] != 0:  # Upper-right
+        neighbors.append(matrix[i-1][j+1])
+    if i < len(matrix)-1 and j > 0 and matrix[i+1][j-1] != 0:  # Lower-left
+        neighbors.append(matrix[i+1][j-1])
+    if i < len(matrix)-1 and j < len(matrix[i])-1 and matrix[i+1][j+1] != 0:  # Lower-right
+        neighbors.append(matrix[i+1][j+1])
+        
     return neighbors
 
 def create_network_policies(matrix):
