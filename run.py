@@ -1,5 +1,4 @@
-import time, sys, random
-import math
+import time, random
 import argparse
 import subprocess
 import threading
@@ -10,7 +9,6 @@ from kubernetes import client, config
 from tabulate import tabulate
 import colorama
 from colorama import Fore, Back, Style
-import time
 
 app = Flask(__name__)
 colorama.init(autoreset=True)
@@ -30,14 +28,14 @@ parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube'
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
 parser.add_argument('--discovery_interval', type=int, default=360, help='Set the discovery interval for drone in seconds')
 parser.add_argument('--enable_leader', type=str, default='True', help='Enable leader election')
-parser.add_argument('--leader_drones', type=str, default='1,5,11', 
+parser.add_argument('--leader_drones', type=str, default='1,5,11',
                     help='Comma-separated list of drone IDs that should be leaders')
 args = parser.parse_args()
 
 def generate_random_matrix(n, numDrones):
     matrix = [[0] * n for _ in range(n)]
     drone_numbers = random.sample(range(1, numDrones + 1), numDrones)
-    
+
     for num in drone_numbers:
         while True:
             row = random.randint(0, n - 1)
@@ -45,7 +43,7 @@ def generate_random_matrix(n, numDrones):
             if matrix[row][col] == 0:
                 matrix[row][col] = num
                 break
-    
+
     return matrix
 
 def generate_hardcoded_matrix(n, numDrones):
@@ -63,7 +61,7 @@ def generate_hardcoded_matrix(n, numDrones):
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
-    
+
     return array
 
 def run_command(command):
@@ -72,129 +70,9 @@ def run_command(command):
     output, error = process.communicate()
     return output.decode(), error.decode()
 
-def partition_grid(matrix, leader_drones):
-    n = len(matrix)
-    partitions = []
-    used_cells = set()
-    
-    # Sort leaders from top to bottom, then left to right
-    leader_drones.sort(key=lambda x: (x[1], x[2]))
-    
-    for leader_id, leader_row, leader_col in leader_drones:
-        # If this leader's position is already in another partition, skip it
-        if (leader_row, leader_col) in used_cells:
-            continue
-            
-        # Initialize partition boundaries
-        start_row = leader_row
-        end_row = leader_row
-        start_col = leader_col
-        end_col = leader_col
-        
-        # Find closest leader above and below
-        above_row = -1
-        below_row = n
-        left_col = -1
-        right_col = n
-        
-        for other_id, other_row, other_col in leader_drones:
-            if other_id != leader_id:
-                # Find vertical boundaries
-                if other_row < leader_row and other_row > above_row:
-                    above_row = other_row
-                elif other_row > leader_row and other_row < below_row:
-                    below_row = other_row
-                    
-                # Find horizontal boundaries
-                if other_col < leader_col and other_col > left_col:
-                    left_col = other_col
-                elif other_col > leader_col and other_col < right_col:
-                    right_col = other_col
-        
-        # Calculate partition boundaries
-        if above_row != -1:
-            start_row = (above_row + leader_row) // 2
-        else:
-            start_row = 0
-            
-        if below_row != n:
-            end_row = (below_row + leader_row) // 2
-        else:
-            end_row = n - 1
-            
-        if left_col != -1:
-            start_col = (left_col + leader_col) // 2
-        else:
-            start_col = 0
-            
-        if right_col != n:
-            end_col = (right_col + leader_col) // 2
-        else:
-            end_col = n - 1
-        
-        # Mark all cells in this partition as used
-        for i in range(start_row, end_row + 1):
-            for j in range(start_col, end_col + 1):
-                used_cells.add((i, j))
-        
-        # Create partition with all drones in the boundary
-        partition = {
-            "leader": leader_id,
-            "start_row": start_row,
-            "end_row": end_row,
-            "start_col": start_col,
-            "end_col": end_col,
-            "drones": []
-        }
-        
-        # Find all drones within the partition boundaries
-        for i in range(start_row, end_row + 1):
-            for j in range(start_col, end_col + 1):
-                if matrix[i][j] != 0:
-                    partition["drones"].append((matrix[i][j], i, j))
-        
-        partitions.append(partition)
-    
-    # Handle any unassigned cells by expanding existing partitions
-    unassigned = []
-    for i in range(n):
-        for j in range(n):
-            if (i, j) not in used_cells:
-                unassigned.append((i, j))
-    
-    if unassigned:
-        # Assign unassigned cells to the nearest partition
-        for i, j in unassigned:
-            min_distance = float('inf')
-            closest_partition = None
-            
-            for partition in partitions:
-                # Calculate distance to partition center
-                center_row = (partition["start_row"] + partition["end_row"]) / 2
-                center_col = (partition["start_col"] + partition["end_col"]) / 2
-                distance = ((i - center_row) ** 2 + (j - center_col) ** 2) ** 0.5
-                
-                if distance < min_distance:
-                    min_distance = distance
-                    closest_partition = partition
-            
-            if closest_partition:
-                # Expand the closest partition to include this cell
-                closest_partition["start_row"] = min(closest_partition["start_row"], i)
-                closest_partition["end_row"] = max(closest_partition["end_row"], i)
-                closest_partition["start_col"] = min(closest_partition["start_col"], j)
-                closest_partition["end_col"] = max(closest_partition["end_col"], j)
-                
-                # Add any drones in this cell to the partition
-                if matrix[i][j] != 0:
-                    closest_partition["drones"].append((matrix[i][j], i, j))
-    
-    print(f"Partitions: {partitions}")
-    return partitions
-
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
-    
+
     table_data = []
     for i, row in enumerate(matrix):
         colored_row = [str(i)]
@@ -204,7 +82,7 @@ def print_matrix(matrix):
             else:
                 colored_row.append(f"{Fore.GREEN}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
         table_data.append(colored_row)
-    
+
     print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
     print(f"\n{Fore.CYAN}Legend: {Fore.GREEN}{Back.LIGHTWHITE_EX} Drone {Style.RESET_ALL} | {Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
 
@@ -267,10 +145,10 @@ spec:
     - protocol: TCP
       port: 60137"""
                 policies.append(policy)
-    
+
     with open('etc/kubernetes/deploymentNetworkPolicy.yml', 'w') as file:
         file.write("\n---\n".join(policies))
-    
+
     subprocess.run("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", shell=True, check=True)
 
 def move_drone(matrix, drone, to_pos):
@@ -295,10 +173,10 @@ def update_coords():
         drone = int(message['drone-id'])
         to_i = int(float(message['x']))
         to_j = int(float(message['y']))
-        
+
         if to_i < 0 or to_i >= len(matrix) or to_j < 0 or to_j >= len(matrix[0]):
             return jsonify({"error": f"Position ({to_i}, {to_j}) is out of bounds"}), 400
-        
+
         current_pos = None
         for i in range(len(matrix)):
             for j in range(len(matrix[0])):
@@ -307,17 +185,17 @@ def update_coords():
                     break
             if current_pos:
                 break
-        
+
         if current_pos and current_pos == (to_i, to_j):
             print_matrix(matrix)
             return jsonify({
                 "message": "Drone is already at the requested position",
                 "new_matrix": matrix
             }), 200
-        
+
         if matrix[to_i][to_j] != 0:
             return jsonify({"error": f"Position ({to_i}, {to_j}) is not empty"}), 400
-        
+
         matrix = move_drone(matrix, drone, (to_i, to_j))
         create_network_policies(matrix)
         print(f"Drone {drone} moved to position ({to_i}, {to_j})")
@@ -345,8 +223,6 @@ def setup_port_forwarding(services):
             thread = threading.Thread(target=run_command, args=(command,))
             thread.start()
             threads.append(thread)
-    
-    time.sleep(5)
 
 # Define global variable for leader drones
 all_leader_drones = ''
@@ -379,7 +255,7 @@ def main():
 
     delim = "---\n"
 
-    with open('etc/kubernetes/droneDeployment.yml', 'w') as file: 
+    with open('etc/kubernetes/droneDeployment.yml', 'w') as file:
         nodePort = 30001
         for num in range(1, droneNum + 1):
             drone = f"""apiVersion: v1
@@ -392,7 +268,7 @@ metadata:
     tier: drone
 spec:
   hostname: drone{num}
-  containers: 
+  containers:
     - name: logs
       image: {droneImage}
       imagePullPolicy: Always
@@ -473,7 +349,7 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: {nodePort}
 """
             file.write(drone)
@@ -493,7 +369,7 @@ metadata:
     tier: drone
 spec:
   hostname: gcs
-  containers: 
+  containers:
     - name: gcs
       image: {gcsImage}
       imagePullPolicy: Always
@@ -516,7 +392,7 @@ spec:
         - name: flask-port
           protocol: TCP
           containerPort: 5000"""
-        
+
         gcs_service = f"""apiVersion: v1
 kind: Service
 metadata:
@@ -539,7 +415,7 @@ spec:
     protocol: TCP
     port: 5000
     targetPort: 5000"""
-        
+
         configMap = f"""apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -553,10 +429,10 @@ data:
       addresses:
       - 192.168.1.101-192.168.1.150
 """
-        
+
         file.write(gcs + "\n" + delim + gcs_service + "\n" + delim + configMap + "\n")
         file.close()
-        
+
     valid_config = False
 
     while not valid_config:
@@ -624,49 +500,15 @@ data:
                         leader_drones.append((matrix[i][j], i, j))
 
             print(f"Selected leader drones: {leader_drones}")
-            # partitions = partition_grid(matrix, leader_drones)
-
-            # for service in services.items:
-            #     if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
-            #         drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
-            #         nodePort = 30000 + drone_number
-            #         print(f"Service: {service.metadata.name}")
-
-            #         for ingress in service.status.load_balancer.ingress:
-            #             url = f"http://127.0.0.1:{nodePort}"
-            #             print(f"Sending request to {url}")
-
-            #             is_leader = drone_number in [int(id) for id in args.leader_drones.split(',')]
-            #             data = {"is_leader": is_leader} 
-
-            #             if is_leader:
-            #                 leader_index = next(i for i, drone in enumerate(leader_drones) if drone[0] == drone_number)
-            #                 partition = partitions[leader_index]
-            #                 data["partition"] = {
-            #                     "start_row": partition["start_row"],
-            #                     "end_row": partition["end_row"],
-            #                     "start_col": partition["start_col"],
-            #                     "end_col": partition["end_col"]
-            #                 }
-
-            #             try:
-            #                 response = requests.post(url, json=data)
-            #                 response.raise_for_status()
-            #                 print(f"Sent {'leader' if is_leader else 'follower'} info to Drone {drone_number}")
-            #             except requests.exceptions.RequestException as e:
-            #                 print(f"Failed to send info to Drone {drone_number}: {e}")
-            # for process in processes:
-            #     process.terminate()
             break
 
         else:
             print("Not all pods are running")
 
-    setup_port_forwarding(services)
     while True:
         print_matrix(matrix)
         user_input = input("Enter move (drone_number to_i to_j) or 'q' to quit: ")
-        
+
         if user_input.lower() == 'q':
             func = request.environ.get('werkzeug.server.shutdown')
             if func is None:
@@ -674,13 +516,13 @@ data:
             func()
             flask_thread.join()
             break
-        
+
         try:
             drone, to_i, to_j = map(int, user_input.split())
             if matrix[to_i][to_j] != 0:
                 print(f"Error: Position ({to_i}, {to_j}) is not empty")
                 continue
-            
+
             matrix = move_drone(matrix, drone, (to_i, to_j))
             create_network_policies(matrix)
             print("Network policies updated.")
@@ -688,7 +530,7 @@ data:
             print(f"Error: {str(e)}")
         except IndexError:
             print("Invalid position. Please ensure all indices are within the matrix bounds.")
-        
+
         for service in services.items:
             if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
                 drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
@@ -704,7 +546,7 @@ data:
                         response.raise_for_status()
                     except requests.exceptions.RequestException as e:
                         print(f"Failed to send info to Drone {drone_number}: {e}")
-        
+
 
 if __name__ == "__main__":
     main()
