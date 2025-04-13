@@ -15,6 +15,22 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->isLeader = (std::getenv("IS_LEADER") != nullptr && 
     std::string(std::getenv("IS_LEADER")) == "true");
 
+    // Initialize known leaders from environment variable
+    const char* otherLeadersEnv = std::getenv("OTHER_LEADERS");
+    if (otherLeadersEnv) {
+        std::string leaders(otherLeadersEnv);
+        std::istringstream iss(leaders);
+        std::string leader;
+        
+        // Parse comma-separated list of leader addresses
+        while (std::getline(iss, leader, ',')) {
+            if (!leader.empty()) {
+                this->knownLeaders.push_back(leader);
+                logger->info("Added known leader: {}", leader);
+            }
+        }
+    }
+
     pki_client = std::make_unique<PKIClient>(
         this->addr,
         "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
@@ -138,8 +154,16 @@ void drone::clientResponseThread() {
 
             if (isFromIPC && (messageType == INIT_ROUTE_DISCOVERY || messageType == VERIFY_ROUTE || messageType == INIT_LEAVE)) {
                 if (messageType == INIT_ROUTE_DISCOVERY) {
-                    logger->info("Processing IPC route discovery request to {}", jsonData["destAddr"].get<std::string>());
-                    initRouteDiscovery(jsonData["destAddr"].get<std::string>());
+                    // Check if this is a cross-swarm discovery request
+                    bool isCrossSwarm = jsonData.contains("isCrossSwarm") && jsonData["isCrossSwarm"].get<bool>();
+                    
+                    if (isCrossSwarm) {
+                        logger->info("Processing IPC cross-swarm route discovery request to {}", jsonData["destAddr"].get<std::string>());
+                        initCrossSwarmRouteDiscovery(jsonData["destAddr"].get<std::string>());
+                    } else {
+                        logger->info("Processing IPC route discovery request to {}", jsonData["destAddr"].get<std::string>());
+                        initRouteDiscovery(jsonData["destAddr"].get<std::string>());
+                    }
                 } else if (messageType == VERIFY_ROUTE) {
                     verifyRouteHandler(jsonData);
                 } else if (messageType == INIT_LEAVE) {
@@ -316,27 +340,93 @@ void drone::dataHandler(json& data){
     DATA_MESSAGE msg;
     msg.deserialize(data);
 
-    /*Place below block in else statement if passing up to an application layer running the ipc*/
-    // if (msg.isBroadcast || (msg.destAddr == this->addr)) {
-    //     if (this->ipc_client) {
-    //         this->ipc_client->sendData(msg.data + "\n");
-    //     } else {
-    //         logger->error("IPC Server not initialized");
-    //     }
-    // } else {}
+    // Handle case where we are the destination
+    if (msg.isBroadcast || (msg.destAddr == this->addr)) {
+        logger->info("Received data message for this node");
+        return;
+    }
 
     logger->debug("Forwarding data to next hop");
     if (this->tesla.routingTable.find(msg.destAddr)) {
         logger->debug("Route found, sending data");
+        auto routeEntry = this->tesla.routingTable.get(msg.destAddr);
+        
+        // Check if this is a cross-swarm route
+        if (routeEntry->isCrossSwarm) {
+            // Check if we have leader information
+            if (!routeEntry->targetLeader.empty()) {
+                if (this->isLeader) {
+                    // We are the leader, so forward to the target leader
+                    logger->info("Forwarding cross-swarm data to target leader: {}", routeEntry->targetLeader);
+                    
+                    // Create a copy with cross-swarm flags
+                    DATA_MESSAGE crossMsg = msg;
+                    crossMsg.isCrossSwarm = true;
+                    crossMsg.forwardingLeader = this->addr;
+                    
+                    // Sign the message
+                    std::vector<uint8_t> dataToSign(msg.destAddr.begin(), msg.destAddr.end());
+                    if (pki_client->signMessage(dataToSign)) {
+                        std::stringstream ss;
+                        for (const auto& byte : dataToSign) {
+                            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                        }
+                        crossMsg.leaderSignature = ss.str();
+                    }
+                    
+                    if (sendData(routeEntry->targetLeader, crossMsg.serialize()) != 0) {
+                        logger->error("Failed to forward cross-swarm data to target leader");
+                    }
+                } else {
+                    // We are not the leader, so forward to our leader
+                    std::lock_guard<std::mutex> lock(leaderMutex);
+                    if (!current_leader.empty()) {
+                        logger->info("Forwarding cross-swarm data to our leader: {}", current_leader);
+                        if (sendData(current_leader, msg.serialize()) != 0) {
+                            logger->error("Failed to forward cross-swarm data to our leader");
+                        }
+                    } else {
+                        logger->error("Cannot forward cross-swarm data - no leader available");
+                    }
+                }
+            } else {
+                logger->error("Cross-swarm route without target leader information");
+            }
+        } else {
+            // Regular route, forward to next hop
+            if (sendData(routeEntry->intermediateAddr, msg.serialize()) != 0) {
+                RERR rerr;
+                // Attach information here for RERR
+                TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
+                rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+                rerr.addRetAddr(msg.srcAddr);
 
-        if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
-            RERR rerr;
-            // Attach information here for RERR
-            TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
-            rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
-            rerr.addRetAddr(msg.srcAddr);
-
-            sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
+                sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
+            }
+        }
+    } else {
+        // If this is a cross-swarm request and we are a leader, try to handle it
+        if (msg.isCrossSwarm && this->isLeader && !msg.forwardingLeader.empty()) {
+            logger->info("Received cross-swarm data from leader {}", msg.forwardingLeader);
+            
+            // Check if destination is in our swarm
+            bool isDestInSwarm = false;
+            {
+                std::lock_guard<std::mutex> lock(swarmMembersMutex);
+                isDestInSwarm = (swarmMembers.find(msg.destAddr) != swarmMembers.end());
+            }
+            
+            if (isDestInSwarm) {
+                // Destination is in our swarm, forward directly
+                logger->info("Forwarding cross-swarm data to destination: {}", msg.destAddr);
+                if (sendData(msg.destAddr, msg.serialize()) != 0) {
+                    logger->error("Failed to forward cross-swarm data to destination");
+                }
+            } else {
+                logger->error("Destination {} not in this swarm", msg.destAddr);
+            }
+        } else {
+            logger->error("No route found for destination: {}", msg.destAddr);
         }
     }
 }
@@ -426,25 +516,104 @@ int drone::send(const string& destAddr, string msg, bool isExternal) {
         msg = data.serialize();
     }
 
+    // Check if we have a route to the destination
     if (!this->tesla.routingTable.find(destAddr)) {
-        logger->info("Route not found, initiating route discovery.");
-        logger->trace("Destination: {}", destAddr);
-        logger->trace("Message: {}", msg);
-
-        PendingRoute pendingRoute;
-        pendingRoute.destAddr = destAddr;
-        pendingRoute.msg = msg;
-        pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
-                                    std::chrono::seconds(this->timeout_sec);
-
-        if (!addPendingRoute(pendingRoute)) {
-            logger->error("Failed to queue message for {}", destAddr);
-            return -1;
+        logger->info("Route not found, checking if cross-swarm destination");
+        
+        // Check if the destination might be in another swarm
+        bool isKnownInSwarm = false;
+        {
+            std::lock_guard<std::mutex> lock(swarmMembersMutex);
+            isKnownInSwarm = (swarmMembers.find(destAddr) != swarmMembers.end());
         }
+        
+        // If it's not in our swarm and we're in swarm phase, try cross-swarm discovery
+        if (!isKnownInSwarm && this->swarmPhase.load()) {
+            logger->info("Attempting cross-swarm route discovery for {}", destAddr);
+            
+            PendingRoute pendingRoute;
+            pendingRoute.destAddr = destAddr;
+            pendingRoute.msg = msg;
+            pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                        std::chrono::seconds(this->timeout_sec);
 
-        this->initRouteDiscovery(destAddr);
+            if (!addPendingRoute(pendingRoute)) {
+                logger->error("Failed to queue message for {}", destAddr);
+                return -1;
+            }
+
+            // Initiate cross-swarm route discovery
+            this->initCrossSwarmRouteDiscovery(destAddr);
+            return 0;
+        } else {
+            // Regular route discovery
+            logger->info("Route not found, initiating standard route discovery.");
+            logger->trace("Destination: {}", destAddr);
+            logger->trace("Message: {}", msg);
+
+            PendingRoute pendingRoute;
+            pendingRoute.destAddr = destAddr;
+            pendingRoute.msg = msg;
+            pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                        std::chrono::seconds(this->timeout_sec);
+
+            if (!addPendingRoute(pendingRoute)) {
+                logger->error("Failed to queue message for {}", destAddr);
+                return -1;
+            }
+
+            this->initRouteDiscovery(destAddr);
+        }
     } else {
-        return sendData(this->tesla.routingTable.get(destAddr)->intermediateAddr, msg);
+        // We have a route, check if it's a cross-swarm route
+        auto routeEntry = this->tesla.routingTable.get(destAddr);
+        if (routeEntry->isCrossSwarm) {
+            logger->info("Using existing cross-swarm route via leader {}", routeEntry->targetLeader);
+            
+            // For cross-swarm routes, we need to prepare a cross-swarm data message
+            if (isExternal) {
+                // Already serialized as a DATA_MESSAGE above, deserialize to modify
+                DATA_MESSAGE data;
+                auto parsedJson = json::parse(msg);
+                data.deserialize(parsedJson);
+                data.isCrossSwarm = true;
+                
+                // If we're a leader, set forwarding leader and sign
+                if (this->isLeader) {
+                    data.forwardingLeader = this->addr;
+                    
+                    // Sign the message
+                    std::vector<uint8_t> dataToSign(data.destAddr.begin(), data.destAddr.end());
+                    if (pki_client->signMessage(dataToSign)) {
+                        std::stringstream ss;
+                        for (const auto& byte : dataToSign) {
+                            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                        }
+                        data.leaderSignature = ss.str();
+                    }
+                    
+                    msg = data.serialize();
+                }
+            }
+            
+            // Send to appropriate next hop based on our role
+            if (this->isLeader) {
+                // Leaders send directly to the target leader
+                return sendData(routeEntry->targetLeader, msg);
+            } else {
+                // Regular nodes send to their leader
+                std::lock_guard<std::mutex> lock(leaderMutex);
+                if (!current_leader.empty()) {
+                    return sendData(current_leader, msg);
+                } else {
+                    logger->error("Cannot send cross-swarm message - no leader available");
+                    return -1;
+                }
+            }
+        } else {
+            // Regular route, use normal next hop
+            return sendData(routeEntry->intermediateAddr, msg);
+        }
     }
 
     return 0;
@@ -599,6 +768,134 @@ void drone::initRouteDiscovery(const string& destAddr){
     udpInterface.broadcast(buf);
 }
 
+void drone::initCrossSwarmRouteDiscovery(const string& destAddr) {
+    logger->info("Initiating cross-swarm route discovery to {}", destAddr);
+    
+    // First check if we are the leader
+    if (this->isLeader) {
+        // As a leader, create an RREQ packet with cross-swarm flag
+        std::unique_ptr<RREQ> msg = std::make_unique<RREQ>();
+        msg->type = ROUTE_REQUEST;
+        msg->srcAddr = this->addr;
+        msg->recvAddr = this->addr;
+        msg->destAddr = destAddr;
+        msg->srcSeqNum = ++this->seqNum;
+        msg->ttl = this->max_hop_count;
+        msg->isCrossSwarm = true; // Mark as cross-swarm request
+        msg->forwardingLeader = this->addr; // This leader is forwarding
+        
+        msg->destSeqNum = [&]() {
+            std::lock_guard<std::mutex> lock(this->routingTableMutex);
+            auto it = this->tesla.routingTable.get(msg->destAddr);
+            return (it) ? it->seqNum : 0;
+        }();
+
+        msg->hopCount = 1;
+        try {
+            msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
+        } catch (const std::out_of_range& e) {
+            logger->error("Hash chain access error: {}", e.what());
+            return;
+        }
+
+        HashTree tree = HashTree(msg->srcAddr);
+        msg->hashTree = tree.toVector();
+        msg->rootHash = tree.getRoot()->hash;
+
+        RERR rerr_prime;
+        string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
+        rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+        msg->herr = HERR::create(rerr_prime, tsla_hash);
+        
+        // Sign the message to authenticate between leaders
+        std::vector<uint8_t> dataToSign(msg->destAddr.begin(), msg->destAddr.end());
+        if (!pki_client->signMessage(dataToSign)) {
+            logger->error("Failed to sign cross-swarm RREQ");
+            return;
+        }
+        
+        std::stringstream ss;
+        for (const auto& byte : dataToSign) {
+            ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+        }
+        msg->leaderSignature = ss.str();
+
+        this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+        
+        // Add pending route entry
+        PendingRoute pendingRoute;
+        pendingRoute.destAddr = destAddr;
+        pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                    std::chrono::seconds(this->timeout_sec);
+        if (!addPendingRoute(pendingRoute)) {
+            logger->error("Failed to queue cross-swarm route discovery for {}", destAddr);
+            return;
+        }
+        
+        // Serialize and broadcast to other leaders
+        string buf = msg->serialize();
+        logger->info("Broadcasting cross-swarm RREQ to other leaders");
+        broadcastToOtherLeaders(buf, this->addr);
+    } else {
+        // Regular node - forward request to our leader
+        std::lock_guard<std::mutex> lock(leaderMutex);
+        if (current_leader.empty()) {
+            logger->error("Cannot initiate cross-swarm route discovery - no leader available");
+            return;
+        }
+        
+        // Create a standard RREQ but mark it for the leader to handle as cross-swarm
+        std::unique_ptr<RREQ> msg = std::make_unique<RREQ>();
+        msg->type = ROUTE_REQUEST;
+        msg->srcAddr = this->addr;
+        msg->recvAddr = this->addr;
+        msg->destAddr = destAddr;
+        msg->srcSeqNum = ++this->seqNum;
+        msg->ttl = this->max_hop_count;
+        msg->isCrossSwarm = true; // Mark as cross-swarm request, but don't set forwarding leader
+        
+        msg->destSeqNum = [&]() {
+            std::lock_guard<std::mutex> lock(this->routingTableMutex);
+            auto it = this->tesla.routingTable.get(msg->destAddr);
+            return (it) ? it->seqNum : 0;
+        }();
+
+        msg->hopCount = 1;
+        try {
+            msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
+        } catch (const std::out_of_range& e) {
+            logger->error("Hash chain access error: {}", e.what());
+            return;
+        }
+
+        HashTree tree = HashTree(msg->srcAddr);
+        msg->hashTree = tree.toVector();
+        msg->rootHash = tree.getRoot()->hash;
+
+        RERR rerr_prime;
+        string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
+        rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+        msg->herr = HERR::create(rerr_prime, tsla_hash);
+
+        this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+        
+        // Add pending route entry
+        PendingRoute pendingRoute;
+        pendingRoute.destAddr = destAddr;
+        pendingRoute.expirationTime = std::chrono::steady_clock::now() + 
+                                    std::chrono::seconds(this->timeout_sec);
+        if (!addPendingRoute(pendingRoute)) {
+            logger->error("Failed to queue cross-swarm route discovery for {}", destAddr);
+            return;
+        }
+        
+        // Send directly to the leader instead of broadcasting
+        string buf = msg->serialize();
+        logger->info("Sending cross-swarm RREQ to leader {}", current_leader);
+        sendData(current_leader, buf);
+    }
+}
+
 void drone::initMessageHandler(json& data) {
     /*Creates a routing table entry for each authenticator & tesla msg received*/
     // std::lock_guard<std::mutex> lock(this->helloRecvTimerMutex);
@@ -619,7 +916,7 @@ void drone::initMessageHandler(json& data) {
     } else if (msg.mode == INIT_MESSAGE::LEADER) {
         {
             std::lock_guard<std::mutex> lock(leaderMutex);
-            this->current_leader = msg.is_leader;
+            this->current_leader = msg.srcAddr;
         }
         logger->info("Received leader announcement from {}: isLeader={}", 
                     msg.srcAddr, msg.is_leader);
@@ -716,6 +1013,55 @@ void drone::routeRequestHandler(json& data){
         logger->debug("RREQ Details - SrcAddr: {}, DestAddr: {}, HopCount: {}", 
                      msg.srcAddr, msg.destAddr, msg.hopCount);
 
+        // Check if this is a cross-swarm RREQ that needs special handling
+        if (msg.isCrossSwarm) {
+            // Only leaders can process cross-swarm requests from other leaders
+            if (this->isLeader && !msg.forwardingLeader.empty() && msg.forwardingLeader != this->addr) {
+                logger->info("Received cross-swarm RREQ from leader {}", msg.forwardingLeader);
+                handleCrossSwarmRREQ(data);
+                return;
+            }
+            
+            // If we're not a leader but received a cross-swarm request, forward to our leader
+            if (!this->isLeader && msg.forwardingLeader.empty()) {
+                std::lock_guard<std::mutex> leaderLock(leaderMutex);
+                if (!current_leader.empty()) {
+                    logger->info("Forwarding cross-swarm RREQ to leader {}", current_leader);
+                    sendData(current_leader, data.dump());
+                    return;
+                }
+            }
+            
+            // If this is a cross-swarm request without a forwarding leader, and we are a leader,
+            // it's from one of our swarm members - need to handle it
+            if (this->isLeader && msg.forwardingLeader.empty()) {
+                // Handle the request from our swarm member
+                logger->info("Received cross-swarm RREQ from swarm member {}", msg.srcAddr);
+                
+                // Sign the message
+                std::vector<uint8_t> dataToSign(msg.destAddr.begin(), msg.destAddr.end());
+                if (!pki_client->signMessage(dataToSign)) {
+                    logger->error("Failed to sign cross-swarm RREQ from swarm member");
+                    return;
+                }
+                
+                std::stringstream ss;
+                for (const auto& byte : dataToSign) {
+                    ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                }
+                
+                // Update the message with leader information
+                msg.forwardingLeader = this->addr;
+                msg.leaderSignature = ss.str();
+                
+                // Broadcast to other leaders
+                string buf = msg.serialize();
+                logger->info("Broadcasting cross-swarm RREQ to other leaders");
+                broadcastToOtherLeaders(buf, this->addr);
+                return;
+            }
+        }
+
         if (msg.srcAddr == this->addr) {
             logger->debug("Dropping RREQ: Source address matches current node");
             return;
@@ -791,15 +1137,40 @@ void drone::routeRequestHandler(json& data){
                 rrep.destAddr = msg.srcAddr;
                 rrep.recvAddr = this->addr;
                 rrep.srcSeqNum = this->seqNum;
+                
+                // If this was a cross-swarm request, mark the reply as cross-swarm too
+                rrep.isCrossSwarm = msg.isCrossSwarm;
+                if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
+                    rrep.forwardingLeader = this->addr; // For replies, use our address as forwarding leader
+                    
+                    // Sign the message if we are the leader
+                    if (this->isLeader) {
+                        std::vector<uint8_t> dataToSign(msg.srcAddr.begin(), msg.srcAddr.end());
+                        if (pki_client->signMessage(dataToSign)) {
+                            std::stringstream ss;
+                            for (const auto& byte : dataToSign) {
+                                ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+                            }
+                            rrep.leaderSignature = ss.str();
+                        }
+                    }
+                }
 
                 if (this->tesla.routingTable.find(msg.destAddr)) {
                     rrep.destSeqNum = this->tesla.routingTable.get(msg.destAddr)->seqNum;
                 } else {
                     rrep.destSeqNum = this->seqNum;
                     logger->debug("Creating new routing table entry");
-                    this->tesla.routingTable.insert(msg.srcAddr, 
-                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
-                        std::chrono::system_clock::now()), msg.herr);
+                    // Create a routing table entry with cross-swarm info if needed
+                    if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
+                        this->tesla.routingTable.insert(msg.srcAddr, 
+                            ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
+                            std::chrono::system_clock::now(), "", msg.herr, true, msg.forwardingLeader));
+                    } else {
+                        this->tesla.routingTable.insert(msg.srcAddr, 
+                            ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0, 
+                            std::chrono::system_clock::now()), msg.herr);
+                    }
                 }
 
                 rrep.hopCount = 1;
@@ -822,7 +1193,11 @@ void drone::routeRequestHandler(json& data){
                 logger->info("Sending RREP: {}", buf);
                 bytes_sent += buf.size();
 
-                if (msg.hopCount == 1) {
+                if (msg.isCrossSwarm && !msg.forwardingLeader.empty() && this->isLeader) {
+                    // If this is a cross-swarm response and we're a leader, send to the forwarding leader
+                    logger->info("Sending cross-swarm RREP to forwarding leader: {}", msg.forwardingLeader);
+                    sendData(msg.forwardingLeader, buf);
+                } else if (msg.hopCount == 1) {
                     sendData(rrep.destAddr, buf);
                 } else {
                     auto nextHop = this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr;
@@ -846,10 +1221,18 @@ void drone::routeRequestHandler(json& data){
                 }
 
                 logger->debug("Inserting routing table entry");
-                this->tesla.routingTable.insert(msg.srcAddr, 
-                    ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 
-                    msg.hopCount, std::chrono::system_clock::now()), 
-                    msg.herr);
+                // Include cross-swarm info if this is a cross-swarm request
+                if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
+                    this->tesla.routingTable.insert(msg.srcAddr, 
+                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 
+                        msg.hopCount, std::chrono::system_clock::now(), "", msg.herr, 
+                        true, msg.forwardingLeader));
+                } else {
+                    this->tesla.routingTable.insert(msg.srcAddr, 
+                        ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 
+                        msg.hopCount, std::chrono::system_clock::now()), 
+                        msg.herr);
+                }
 
                 msg.hash = (msg.srcSeqNum == 1) ?
                     getHashFromChain(1, msg.hopCount) :
@@ -890,6 +1273,101 @@ void drone::routeRequestHandler(json& data){
     }
 }
 
+void drone::handleCrossSwarmRREQ(json& data) {
+    try {
+        RREQ msg;
+        msg.deserialize(data);
+        
+        logger->info("Handling cross-swarm RREQ from leader {} for destination {}", 
+                    msg.forwardingLeader, msg.destAddr);
+        
+        // Verify the leader's signature
+        // In a real implementation, this would use the leader's public key
+        // For now, we just check that there is a signature
+        if (msg.leaderSignature.empty()) {
+            logger->error("Invalid cross-swarm RREQ: Missing leader signature");
+            return;
+        }
+        
+        // Check if the destination node is in our swarm
+        bool isDestInSwarm = false;
+        {
+            std::lock_guard<std::mutex> lock(swarmMembersMutex);
+            isDestInSwarm = (swarmMembers.find(msg.destAddr) != swarmMembers.end()) || 
+                          (msg.destAddr == this->addr);
+        }
+        
+        if (!isDestInSwarm) {
+            logger->info("Destination {} not in this swarm, forwarding to other leaders", msg.destAddr);
+            // Forward to other leaders
+            broadcastToOtherLeaders(data.dump(), msg.forwardingLeader);
+            return;
+        }
+        
+        logger->info("Destination {} found in our swarm, forwarding RREQ", msg.destAddr);
+        
+        // The destination is in our swarm, create a special routing table entry for the source node
+        // that points back to the leader of the other swarm
+        {
+            std::lock_guard<std::mutex> lock(routingTableMutex);
+            this->tesla.routingTable.insert(msg.srcAddr, 
+                ROUTING_TABLE_ENTRY(msg.srcAddr, msg.forwardingLeader, msg.srcSeqNum, 
+                msg.hopCount, std::chrono::system_clock::now(), "", msg.herr, 
+                true, msg.forwardingLeader));
+        }
+        
+        // Forward the RREQ to the destination node in our swarm
+        if (msg.destAddr == this->addr) {
+            // We are the destination, create an RREP
+            RREP rrep;
+            rrep.srcAddr = this->addr;
+            rrep.destAddr = msg.srcAddr;
+            rrep.recvAddr = this->addr;
+            rrep.srcSeqNum = this->seqNum;
+            rrep.isCrossSwarm = true;
+            rrep.forwardingLeader = this->addr;
+            
+            // Sign the response
+            std::vector<uint8_t> dataToSign(msg.srcAddr.begin(), msg.srcAddr.end());
+            if (!pki_client->signMessage(dataToSign)) {
+                logger->error("Failed to sign cross-swarm RREP");
+                return;
+            }
+            
+            std::stringstream ss;
+            for (const auto& byte : dataToSign) {
+                ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+            }
+            rrep.leaderSignature = ss.str();
+            
+            rrep.hopCount = 1;
+            rrep.hash = (this->seqNum == 1) ? 
+                getHashFromChain(1, 1) : 
+                getHashFromChain(this->seqNum, 1);
+
+            RERR rerr_prime;
+            string nonce = generate_nonce();
+            string tsla_hash = this->tesla.getCurrentHash();
+            
+            rerr_prime.create_rerr_prime(nonce, rrep.srcAddr, rrep.hash);
+            rrep.herr = HERR::create(rerr_prime, tsla_hash);
+            
+            this->tesla.insert(rrep.destAddr, 
+                TESLA::nonce_data{nonce, tsla_hash, rrep.hash, rrep.srcAddr});
+            
+            string buf = rrep.serialize();
+            logger->info("Sending cross-swarm RREP to leader: {}", msg.forwardingLeader);
+            sendData(msg.forwardingLeader, buf);
+        } else {
+            // Forward to the destination node in our swarm
+            logger->info("Forwarding cross-swarm RREQ to destination: {}", msg.destAddr);
+            sendData(msg.destAddr, data.dump());
+        }
+    } catch (const std::exception& e) {
+        logger->error("Error handling cross-swarm RREQ: {}", e.what());
+    }
+}
+
 void drone::routeReplyHandler(json& data) {
     auto start_time = std::chrono::high_resolution_clock::now();
     size_t bytes_sent = 0;
@@ -903,6 +1381,26 @@ void drone::routeReplyHandler(json& data) {
         
         logger->debug("RREP Details - SrcAddr: {}, DestAddr: {}, HopCount: {}, SeqNum: {}", 
                      msg.srcAddr, msg.destAddr, msg.hopCount, msg.srcSeqNum);
+        
+        // Check if this is a cross-swarm RREP that needs special handling
+        if (msg.isCrossSwarm) {
+            // Only leaders can process cross-swarm replies from other leaders
+            if (this->isLeader && !msg.forwardingLeader.empty() && msg.forwardingLeader != this->addr) {
+                logger->info("Received cross-swarm RREP from leader {}", msg.forwardingLeader);
+                handleCrossSwarmRREP(data);
+                return;
+            }
+            
+            // If we're not a leader but received a cross-swarm reply, forward to our leader
+            if (!this->isLeader && msg.forwardingLeader.empty()) {
+                std::lock_guard<std::mutex> leaderLock(leaderMutex);
+                if (!current_leader.empty()) {
+                    logger->info("Forwarding cross-swarm RREP to leader {}", current_leader);
+                    sendData(current_leader, data.dump());
+                    return;
+                }
+            }
+        }
 
         // Validate message fields
         if (msg.hash.empty()) {
@@ -944,17 +1442,32 @@ void drone::routeReplyHandler(json& data) {
         if (msg.destAddr == this->addr) {
             logger->info("This node is the destination for RREP");
             try {
-                this->tesla.routingTable.insert(
-                    msg.srcAddr, 
-                    ROUTING_TABLE_ENTRY(
-                        msg.srcAddr,
-                        msg.recvAddr,
-                        msg.srcSeqNum,
-                        msg.hopCount,
-                        std::chrono::system_clock::now()
-                    ),
-                    msg.herr
-                );
+                // Create a routing table entry with cross-swarm info if needed
+                if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
+                    this->tesla.routingTable.insert(
+                        msg.srcAddr, 
+                        ROUTING_TABLE_ENTRY(
+                            msg.srcAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            msg.hopCount,
+                            std::chrono::system_clock::now(),
+                            "", msg.herr, true, msg.forwardingLeader
+                        )
+                    );
+                } else {
+                    this->tesla.routingTable.insert(
+                        msg.srcAddr, 
+                        ROUTING_TABLE_ENTRY(
+                            msg.srcAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            msg.hopCount,
+                            std::chrono::system_clock::now()
+                        ),
+                        msg.herr
+                    );
+                }
                 
                 {
                     std::lock_guard<std::mutex> lock(pendingRoutesMutex);
@@ -981,7 +1494,20 @@ void drone::routeReplyHandler(json& data) {
         } else {
             logger->info("Forwarding RREP to next hop");
             try {
-                if (!this->tesla.routingTable.find(msg.srcAddr)) {
+                // Create a routing table entry with cross-swarm info if needed
+                if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
+                    this->tesla.routingTable.insert(
+                        msg.srcAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.srcAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            msg.hopCount,
+                            std::chrono::system_clock::now(),
+                            "", msg.herr, true, msg.forwardingLeader
+                        )
+                    );
+                } else if (!this->tesla.routingTable.find(msg.srcAddr)) {
                     this->tesla.routingTable.insert(
                         msg.srcAddr,
                         ROUTING_TABLE_ENTRY(
@@ -1021,9 +1547,16 @@ void drone::routeReplyHandler(json& data) {
                     logger->error("No route entry found for destination: {}", msg.destAddr);
                     return;
                 }
-                auto nextHop = routeEntry->intermediateAddr;
-                logger->info("Forwarding RREP to next hop: {}", nextHop);
-                sendData(nextHop, buf);
+                
+                // If this is a cross-swarm route and we are the leader, send to the source leader
+                if (msg.isCrossSwarm && this->isLeader && !msg.forwardingLeader.empty()) {
+                    logger->info("Forwarding cross-swarm RREP to source leader: {}", msg.forwardingLeader);
+                    sendData(msg.forwardingLeader, buf);
+                } else {
+                    auto nextHop = routeEntry->intermediateAddr;
+                    logger->info("Forwarding RREP to next hop: {}", nextHop);
+                    sendData(nextHop, buf);
+                }
                 
             } catch (const std::exception& e) {
                 logger->error("Exception while forwarding RREP: {}", e.what());
@@ -1038,6 +1571,63 @@ void drone::routeReplyHandler(json& data) {
         logger->debug("=== Finished RREP Handler ===");
     } catch (const std::exception& e) {
         logger->error("Critical error in routeReplyHandler: {}", e.what());
+    }
+}
+
+void drone::handleCrossSwarmRREP(json& data) {
+    try {
+        RREP msg;
+        msg.deserialize(data);
+        
+        logger->info("Handling cross-swarm RREP from leader {} for source {}", 
+                     msg.forwardingLeader, msg.srcAddr);
+        
+        // Verify the leader's signature
+        // In a real implementation, this would use the leader's public key
+        if (msg.leaderSignature.empty()) {
+            logger->error("Invalid cross-swarm RREP: Missing leader signature");
+            return;
+        }
+        
+        // Check if the destination (original requester) is in our swarm
+        bool isDestInSwarm = false;
+        {
+            std::lock_guard<std::mutex> lock(swarmMembersMutex);
+            isDestInSwarm = (swarmMembers.find(msg.destAddr) != swarmMembers.end()) || 
+                           (msg.destAddr == this->addr);
+        }
+        
+        if (!isDestInSwarm) {
+            logger->warn("Destination {} not in this swarm, discarding RREP", msg.destAddr);
+            return;
+        }
+        
+        logger->info("Destination {} found in our swarm, forwarding RREP", msg.destAddr);
+        
+        // The destination is in our swarm, create a special routing table entry for the source node
+        // that points to the leader of the other swarm
+        {
+            std::lock_guard<std::mutex> lock(routingTableMutex);
+            this->tesla.routingTable.insert(msg.srcAddr, 
+                ROUTING_TABLE_ENTRY(msg.srcAddr, msg.forwardingLeader, msg.srcSeqNum, 
+                msg.hopCount, std::chrono::system_clock::now(), "", msg.herr, 
+                true, msg.forwardingLeader));
+        }
+        
+        // If we are the destination, process the RREP
+        if (msg.destAddr == this->addr) {
+            logger->info("This node is the destination for cross-swarm RREP");
+            
+            // Process pending routes that may now have a valid path
+            this->processPendingRoutes();
+        } else {
+            // Forward the RREP to the destination node in our swarm
+            string serialized = data.dump();
+            logger->info("Forwarding cross-swarm RREP to destination: {}", msg.destAddr);
+            sendData(msg.destAddr, serialized);
+        }
+    } catch (const std::exception& e) {
+        logger->error("Error handling cross-swarm RREP: {}", e.what());
     }
 }
 
@@ -1560,6 +2150,68 @@ void drone::propagateValidNodeList() {
             }
         }).detach();
     }
+}
+
+std::vector<string> drone::getOtherLeaderAddresses() {
+    std::lock_guard<std::mutex> lock(knownLeadersMutex);
+    
+    // Return a copy of the leader addresses, excluding this node if it's a leader
+    std::vector<string> otherLeaders;
+    otherLeaders.reserve(knownLeaders.size());
+    
+    for (const auto& leader : knownLeaders) {
+        if (leader != this->addr) { // Don't include self
+            otherLeaders.push_back(leader);
+        }
+    }
+    
+    return otherLeaders;
+}
+
+void drone::broadcastToOtherLeaders(const string& serializedMsg, const string& originLeader) {
+    // Only leaders can broadcast to other leaders
+    if (!this->isLeader) {
+        logger->warn("Non-leader drone attempting to broadcast to other leaders");
+        return;
+    }
+    
+    // Get list of other leaders
+    auto otherLeaders = getOtherLeaderAddresses();
+    if (otherLeaders.empty()) {
+        logger->debug("No other leaders to broadcast to");
+        return;
+    }
+    
+    // Track this leader as visited to prevent routing loops
+    visitedLeaders.insert(this->addr);
+    
+    // Add originating leader to visited set if specified
+    if (!originLeader.empty() && originLeader != this->addr) {
+        visitedLeaders.insert(originLeader);
+    }
+    
+    logger->info("Broadcasting to {} other leaders", otherLeaders.size());
+    
+    // Send the message to all other leaders
+    for (const auto& leader : otherLeaders) {
+        // Skip if this leader has already been visited
+        if (visitedLeaders.find(leader) != visitedLeaders.end()) {
+            logger->debug("Skipping already visited leader: {}", leader);
+            continue;
+        }
+        
+        // Use a separate thread for each leader to avoid blocking
+        std::thread([this, leader, serializedMsg]() {
+            if (sendData(leader, serializedMsg) != 0) {
+                logger->error("Failed to broadcast to leader {}", leader);
+            } else {
+                logger->debug("Successfully broadcast to leader {}", leader);
+            }
+        }).detach();
+    }
+    
+    // Clear visited leaders once broadcast is complete
+    visitedLeaders.clear();
 }
 
 void drone::start() {

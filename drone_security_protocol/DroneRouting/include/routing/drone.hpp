@@ -106,6 +106,12 @@ class drone {
         std::future<void> getSignal();
         // Sends the current valid node list to all swarm members
         void propagateValidNodeList();
+        // Cross-swarm communication methods
+        void initCrossSwarmRouteDiscovery(const string& destAddr);
+        void handleCrossSwarmRREQ(json& data);
+        void handleCrossSwarmRREP(json& data);
+        void broadcastToOtherLeaders(const string& serializedMsg, const string& originLeader);
+        std::vector<string> getOtherLeaderAddresses();
 
     private:
         class TESLA {
@@ -280,7 +286,12 @@ class drone {
         // Track confirmed swarm members (not just validated nodes)
         std::set<std::string> swarmMembers;
         std::mutex swarmMembersMutex;
-
+        
+        // Cross-swarm communication attributes
+        std::vector<std::string> knownLeaders; // List of known leader addresses from env var
+        std::mutex knownLeadersMutex; // Mutex for thread-safe access to leader list
+        std::unordered_set<std::string> visitedLeaders; // Track visited leaders to prevent loops
+        
         void sendJoinRequest();
         void joinRequestHandler(json& data);
         void joinResponseHandler(json& data);

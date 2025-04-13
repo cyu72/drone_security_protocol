@@ -348,14 +348,23 @@ def setup_port_forwarding(services):
     
     time.sleep(5)
 
+# Define global variable for leader drones
+all_leader_drones = ''
+
 def main():
     flask_thread = threading.Thread(target=run_flask_server)
     flask_thread.start()
-    global matrix, processes, threads
+    global matrix, processes, threads, all_leader_drones
 
     droneNum = args.drone_count
     droneImage = "cyu72/drone:simulation-terminal"
     gcsImage = "cyu72/gcs:simulation"
+
+    # Pre-format the leader drones list for environment variables
+    leader_drone_ids = args.leader_drones.split(',')
+    global all_leader_drones
+    all_leader_drones = ','.join([f"drone{id.strip()}-service.default" for id in leader_drone_ids])
+    formatted_leader_drones = all_leader_drones
 
     controller_addr = input("Enter the controller address: ")
 
@@ -473,8 +482,7 @@ spec:
             file.write(delim)
             nodePort += 1
 
-        leader_drone_ids = args.leader_drones.split(',')
-        formatted_leader_drones = ','.join([f"drone{id.strip()}-service.default" for id in leader_drone_ids])
+        # Leader drones are pre-formatted in the main function
         gcs = f"""apiVersion: v1
 kind: Pod
 metadata:
@@ -496,6 +504,8 @@ spec:
           value: "{args.SKIP_VERIFICATION}"
         - name: LEADER_DRONES
           value: "{formatted_leader_drones}"
+        - name: ALL_LEADER_DRONES
+          value: "{all_leader_drones}"
       ports:
         - name: main-port
           protocol: TCP

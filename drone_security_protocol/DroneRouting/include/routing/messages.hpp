@@ -238,6 +238,9 @@ struct RREQ : public MESSAGE {
     unsigned long hopCount;
     HERR herr;
     int ttl; // Max number of hops allowed for RREQ to propagate through network
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this request
+    string leaderSignature; // Cryptographic signature for leader verification
 
     RREQ() {
         this->type = ROUTE_REQUEST;
@@ -247,10 +250,14 @@ struct RREQ : public MESSAGE {
         this->hopCount = 0;
         this->rootHash = "";
         this->ttl = 0;
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
     RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, 
-         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash) {
+         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash,
+         bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr; // address of origin
         this->recvAddr = interAddr;
@@ -263,6 +270,9 @@ struct RREQ : public MESSAGE {
         this->hashTree = hashTree;
         this->ttl = ttl;
         this->rootHash = rootHash;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -278,7 +288,10 @@ struct RREQ : public MESSAGE {
             {"hashTree", this->hashTree},
             {"ttl", this->ttl},
             {"rootHash", this->rootHash},
-            {"herr", this->herr.to_json()}
+            {"herr", this->herr.to_json()},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
 
         return j.dump();
@@ -297,6 +310,11 @@ struct RREQ : public MESSAGE {
         this->ttl = j["ttl"];
         this->rootHash = j["rootHash"];
         this->herr = HERR::from_json(j["herr"]);
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 };
 
@@ -310,6 +328,9 @@ struct RREP : public MESSAGE {
     unsigned long hopCount;
     HERR herr;
     int ttl;
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this reply
+    string leaderSignature; // Cryptographic signature for leader verification
 
     RREP() {
         this->type = ROUTE_REPLY;
@@ -318,9 +339,14 @@ struct RREP : public MESSAGE {
         this->hash = "";
         this->hopCount = 0;
         this->ttl = 0;
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, HERR herr, int ttl) {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, 
+         unsigned long hopCount, HERR herr, int ttl, bool isCrossSwarm = false, 
+         string forwardingLeader = "", string leaderSignature = "") {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -330,6 +356,9 @@ struct RREP : public MESSAGE {
         this->hopCount = hopCount;
         this->herr = herr;
         this->ttl = ttl;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -342,8 +371,11 @@ struct RREP : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"herr", this->herr.to_json()}, // FOR DEBUG PURPOSES ONLY
-            {"ttl", this->ttl}
+            {"herr", this->herr.to_json()},
+            {"ttl", this->ttl},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
         return j.dump();
     }
@@ -357,8 +389,13 @@ struct RREP : public MESSAGE {
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->herr = HERR::from_json(j["herr"]); // FOR DEBUG PURPOSES ONLY
+        this->herr = HERR::from_json(j["herr"]);
         this->ttl = j["ttl"];
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 
 };
@@ -441,20 +478,30 @@ struct DATA_MESSAGE : public MESSAGE {
     string destAddr;
     string srcAddr;
     string data;
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this message
+    string leaderSignature; // Cryptographic signature for leader verification
 
     DATA_MESSAGE() {
         isBroadcast = false;
         this->type = DATA;
         this->destAddr = "";
         this->data = "";
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
-    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false) {
+    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false, 
+                bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
         this->isBroadcast = isBroadcast;
         this->type = DATA;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
         this->data = data;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -463,7 +510,10 @@ struct DATA_MESSAGE : public MESSAGE {
             {"isBroadcast", this->isBroadcast},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
-            {"data", this->data}
+            {"data", this->data},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
         return j.dump();
     }
@@ -474,6 +524,11 @@ struct DATA_MESSAGE : public MESSAGE {
         this->destAddr = j["destAddr"];
         this->srcAddr = j["srcAddr"];
         this->data = j["data"];
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 };
 
