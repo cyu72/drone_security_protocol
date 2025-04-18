@@ -95,6 +95,38 @@ def run_command(command):
     output, error = process.communicate()
     return output.decode(), error.decode()
 
+def run_kubectl_command(command, description=""):
+    """Run a kubectl command with proper error handling.
+    
+    Args:
+        command: The kubectl command to run
+        description: Optional description for logging purposes
+        
+    Returns:
+        (bool, str): Success status and error message or output
+    """
+    try:
+        if description:
+            print(f"{Fore.CYAN}{description}...{Style.RESET_ALL}")
+        
+        result = subprocess.run(command, shell=True, check=False, 
+                               capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            error_msg = f"Error: {result.stderr}"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            return False, error_msg
+        else:
+            if description:
+                success_msg = f"{description} completed successfully"
+                print(f"{Fore.GREEN}{success_msg}{Style.RESET_ALL}")
+            return True, result.stdout
+            
+    except Exception as e:
+        error_msg = f"Command failed: {str(e)}"
+        print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+        return False, error_msg
+
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
 
@@ -192,7 +224,8 @@ def create_network_policies(matrix):
                     if other_leaders:
                         print(f"{Fore.CYAN}Leader drone {matrix[i][j]} can communicate with leaders: {other_leaders}")
 
-                policy = f"""apiVersion: networking.k8s.io/v1
+                # Create a different policy structure depending on whether the drone has neighbors
+                base_policy = f"""apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: ingress-selector{matrix[i][j]}
@@ -216,13 +249,10 @@ spec:
     - protocol: TCP
       port: 8080
     - protocol: TCP
-      port: 60137
-  - from:
-    - podSelector:
-        matchExpressions:
-        - key: app
-          operator: In
-          values: [{', '.join([f'drone{n}' for n in neighbors])}]
+      port: 60137"""
+                
+                # The common ports configuration
+                ports_config = """
     ports:
     - protocol: TCP
       port: 65456
@@ -232,12 +262,27 @@ spec:
       port: 8080
     - protocol: TCP
       port: 60137"""
+
+                if neighbors:
+                    # Add neighbor connections if drone has neighbors
+                    policy = base_policy + f"""
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [{', '.join([f'drone{n}' for n in neighbors])}]{ports_config}"""
+                else:
+                    # Just use the base policy if no neighbors
+                    policy = base_policy
                 policies.append(policy)
 
     with open('etc/kubernetes/deploymentNetworkPolicy.yml', 'w') as file:
         file.write("\n---\n".join(policies))
 
-    subprocess.run("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", shell=True, check=True)
+    # Apply network policies using our utility function
+    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", 
+                      "Applying network policies")
 
 def move_drone(matrix, drone, to_pos):
     to_i, to_j = to_pos
@@ -284,12 +329,17 @@ def update_coords():
         if matrix[to_i][to_j] != 0:
             return jsonify({"error": f"Position ({to_i}, {to_j}) is not empty"}), 400
 
-        matrix = move_drone(matrix, drone, (to_i, to_j))
-        create_network_policies(matrix)
-        print(f"Drone {drone} moved to position ({to_i}, {to_j})")
-        print("Matrix updated and network policies updated.")
-        print_matrix(matrix)
-        return jsonify({"message": "Coordinates updated successfully", "new_matrix": matrix}), 200
+        try:
+            matrix = move_drone(matrix, drone, (to_i, to_j))
+            create_network_policies(matrix)
+            print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
+            print(f"{Fore.GREEN}Matrix updated and network policies updated.{Style.RESET_ALL}")
+            print_matrix(matrix)
+            return jsonify({"message": "Coordinates updated successfully", "new_matrix": matrix}), 200
+        except Exception as e:
+            error_msg = f"Failed to update network policies: {str(e)}"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            return jsonify({"error": error_msg}), 500
     except KeyError as e:
         return jsonify({"error": f"Invalid request format. Missing key: {str(e)}"}), 400
     except ValueError as e:
@@ -382,9 +432,16 @@ def main():
         gcs_ip = 'gcs-service.default'
 
     if args.startup:
+        # Use subprocess.run directly for minikube commands (non-kubectl)
         subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
-        subprocess.run("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", shell=True, check=True)
-        subprocess.run("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", shell=True, check=True)
+        
+        # Use our utility function for kubectl commands
+        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", 
+                          "Applying Calico networking")
+        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", 
+                          "Applying MetalLB load balancer")
+        
+        # Use subprocess.run for minikube addon command
         subprocess.run("minikube addons enable metallb", shell=True, check=True)
 
     delim = "---\n"
@@ -602,22 +659,31 @@ data:
     if (args.startup):
         time.sleep(45)
 
-    command = "kubectl apply -f etc/kubernetes/droneDeployment.yml"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    command = "kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml"
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Apply drone deployment and network policies using our utility function
+    run_kubectl_command("kubectl apply -f etc/kubernetes/droneDeployment.yml", "Applying drone deployment")
+    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", "Applying network policies")
 
     time.sleep(20)
 
-    print("Waiting for drone pods to be ready...")
+    print(f"{Fore.CYAN}Waiting for drone pods to be ready...{Style.RESET_ALL}")
     droneNum = args.drone_count
+    ready_drones = 0
+    
     for num in range(1, droneNum + 1):
         wait_command = f"kubectl wait --for=condition=ready pod drone{num} --timeout=120s"
-        try:
-            subprocess.run(wait_command, shell=True, check=True)
-            print(f"Drone{num} is ready")
-        except subprocess.CalledProcessError:
-            print(f"Warning: Timeout waiting for drone{num}")
+        success, output = run_kubectl_command(wait_command, f"Waiting for Drone{num}")
+        
+        if success:
+            print(f"{Fore.GREEN}Drone{num} is ready{Style.RESET_ALL}")
+            ready_drones += 1
+        else:
+            print(f"{Fore.YELLOW}Warning: Timeout waiting for drone{num}{Style.RESET_ALL}")
+    
+    # Summary of readiness
+    if ready_drones == droneNum:
+        print(f"{Fore.GREEN}All {droneNum} drones are ready!{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.YELLOW}Only {ready_drones} out of {droneNum} drones are ready. Proceeding anyway...{Style.RESET_ALL}")
 
     processes = []
     threads = []
@@ -687,9 +753,34 @@ data:
                 print(f"Error: Position ({to_i}, {to_j}) is not empty")
                 continue
 
-            matrix = move_drone(matrix, drone, (to_i, to_j))
-            create_network_policies(matrix)
-            print("Network policies updated.")
+            try:
+                # Record the old position for potential rollback
+                old_positions = {}
+                for i in range(len(matrix)):
+                    for j in range(len(matrix[i])):
+                        if matrix[i][j] == drone:
+                            old_positions = {'drone': drone, 'i': i, 'j': j}
+                            break
+                
+                # Attempt to move the drone
+                matrix = move_drone(matrix, drone, (to_i, to_j))
+                print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
+                
+                # Update network policies
+                try:
+                    create_network_policies(matrix)
+                    print(f"{Fore.GREEN}Network policies updated successfully{Style.RESET_ALL}")
+                except Exception as policy_error:
+                    # If updating policies fails, roll back the drone movement
+                    if old_positions:
+                        print(f"{Fore.YELLOW}Rolling back drone movement due to policy error...{Style.RESET_ALL}")
+                        matrix[old_positions['i']][old_positions['j']] = old_positions['drone']
+                        matrix[to_i][to_j] = 0
+                        print(f"{Fore.YELLOW}Drone {drone} movement rolled back to original position{Style.RESET_ALL}")
+                    raise policy_error
+                    
+            except Exception as e:
+                print(f"{Fore.RED}Error: {str(e)}{Style.RESET_ALL}")
         except ValueError as e:
             print(f"Error: {str(e)}")
         except IndexError:
