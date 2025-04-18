@@ -15,20 +15,21 @@ colorama.init(autoreset=True)
 matrix = []
 
 parser = argparse.ArgumentParser(description='TBD')
-parser.add_argument('--drone_count', type=int, default=21, help='Specify number of drones in simulation')
+parser.add_argument('--drone_count', type=int, default=10, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=25, help='Maximium number of nodes we can route messages through')
 parser.add_argument('--max_seq_count', type=int, default=50, help='Maximium number of sequence numbers we can store')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
-parser.add_argument('--grid_type', choices=['random', 'hardcoded'], default='hardcoded', help='Choose between random or hardcoded grid')
+parser.add_argument('--grid_type', choices=['random', 'hardcoded', 'multi_swarm'], default='hardcoded',
+                    help='Choose between random, hardcoded grid, or multi-swarm topology')
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
 parser.add_argument('--discovery_interval', type=int, default=360, help='Set the discovery interval for drone in seconds')
 parser.add_argument('--enable_leader', type=str, default='True', help='Enable leader election')
-parser.add_argument('--leader_drones', type=str, default='1,5,11',
+parser.add_argument('--leader_drones', type=str, default='1,5',
                     help='Comma-separated list of drone IDs that should be leaders')
 args = parser.parse_args()
 
@@ -48,21 +49,45 @@ def generate_random_matrix(n, numDrones):
 
 def generate_hardcoded_matrix(n, numDrones):
     array = [
-        [0, 0, 0, 0, 0, 0, 14, 15, 16, 17, 18, 0],
-        [0, 0, 0, 0, 0, 0, 13, 0, 0, 0, 19, 0],
-        [0, 0, 0, 0, 0, 0, 12, 0, 0, 0, 20, 0],
-        [0, 0, 0, 0, 0, 0, 11, 0, 0, 0, 21, 0],
-        [0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0],
-        [3, 4, 1, 2, 6, 7, 8, 0, 0, 0, 0, 0],
-        [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 10, 9, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 7, 6, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
 
     return array
+
+def generate_multi_swarm_matrix(n, numDrones):
+    """Generate a matrix with 2 distinct swarms that are positioned closer together.
+
+    This topology places multiple swarms in adjacent areas of the grid to facilitate
+    better communication between swarms, especially between leader drones.
+    """
+    # Hardcoded 2D array for multi-swarm matrix
+    matrix = [
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 2, 3, 0, 7, 8, 0, 0, 0],
+      [0, 0, 0, 1, 4, 5, 10, 6, 9, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ]
+
+    return matrix
 
 def run_command(command):
     process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -73,18 +98,46 @@ def run_command(command):
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
 
+    # Define swarm ranges for multi_swarm topology
+    swarm1_range = list(range(1, 6))  # Drone IDs 1-5
+    swarm2_range = list(range(6, 11)) # Drone IDs 6-10
+
+    # Check if using multi-swarm topology
+    multi_swarm_mode = hasattr(args, 'grid_type') and args.grid_type == 'multi_swarm'
+
     table_data = []
     for i, row in enumerate(matrix):
         colored_row = [str(i)]
         for element in row:
             if element == 0:
                 colored_row.append(f"{Fore.LIGHTBLACK_EX}{element:2}{Style.RESET_ALL}")
+            elif multi_swarm_mode:
+                # Color-code based on swarm
+                if element in swarm1_range:
+                    # Swarm 1 - green
+                    colored_row.append(f"{Fore.GREEN}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
+                elif element in swarm2_range:
+                    # Swarm 2 - yellow
+                    colored_row.append(f"{Fore.YELLOW}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
+                else:
+                    # Default for any other drones
+                    colored_row.append(f"{Fore.BLUE}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
             else:
+                # Standard display for non-multi-swarm topology
                 colored_row.append(f"{Fore.GREEN}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
         table_data.append(colored_row)
 
     print(tabulate(table_data, headers=headers, tablefmt="fancy_grid"))
-    print(f"\n{Fore.CYAN}Legend: {Fore.GREEN}{Back.LIGHTWHITE_EX} Drone {Style.RESET_ALL} | {Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
+
+    # Custom legend based on topology mode
+    if multi_swarm_mode:
+        print(f"\n{Fore.CYAN}Legend:")
+        print(f"{Fore.GREEN}{Back.LIGHTWHITE_EX} Swarm 1 {Style.RESET_ALL} | "
+              f"{Fore.YELLOW}{Back.LIGHTWHITE_EX} Swarm 2 {Style.RESET_ALL} | "
+              f"{Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
+    else:
+        print(f"\n{Fore.CYAN}Legend: {Fore.GREEN}{Back.LIGHTWHITE_EX} Drone {Style.RESET_ALL} | "
+              f"{Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
 
 def get_neighbors(matrix, i, j):
     neighbors = []
@@ -97,7 +150,7 @@ def get_neighbors(matrix, i, j):
         neighbors.append(matrix[i][j-1])
     if j < len(matrix[i])-1 and matrix[i][j+1] != 0:  # Right
         neighbors.append(matrix[i][j+1])
-    
+
     # Check diagonal directions
     if i > 0 and j > 0 and matrix[i-1][j-1] != 0:  # Upper-left
         neighbors.append(matrix[i-1][j-1])
@@ -107,15 +160,38 @@ def get_neighbors(matrix, i, j):
         neighbors.append(matrix[i+1][j-1])
     if i < len(matrix)-1 and j < len(matrix[i])-1 and matrix[i+1][j+1] != 0:  # Lower-right
         neighbors.append(matrix[i+1][j+1])
-        
+
     return neighbors
 
 def create_network_policies(matrix):
     policies = []
+
+    # Get leader drones for special handling in multi-swarm mode
+    leader_drone_ids = [int(id.strip()) for id in args.leader_drones.split(',')]
+    leader_positions = []
+
+    # Find positions of all leader drones in the matrix
+    for i in range(len(matrix)):
+        for j in range(len(matrix[i])):
+            if matrix[i][j] in leader_drone_ids:
+                leader_positions.append((matrix[i][j], i, j))
+
     for i in range(len(matrix)):
         for j in range(len(matrix[i])):
             if matrix[i][j] != 0:
                 neighbors = get_neighbors(matrix, i, j)
+
+                # In multi-swarm mode, leaders can also communicate with other leaders
+                if args.grid_type == 'multi_swarm' and matrix[i][j] in leader_drone_ids:
+                    for leader_id, _, _ in leader_positions:
+                        if leader_id != matrix[i][j] and leader_id not in neighbors:
+                            neighbors.append(leader_id)
+
+                    # Special case: Print connections between leaders
+                    other_leaders = [lid for lid, _, _ in leader_positions if lid != matrix[i][j]]
+                    if other_leaders:
+                        print(f"{Fore.CYAN}Leader drone {matrix[i][j]} can communicate with leaders: {other_leaders}")
+
                 policy = f"""apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -236,23 +312,69 @@ def setup_port_forwarding(services):
             thread.start()
             threads.append(thread)
 
-# Define global variable for leader drones
-all_leader_drones = ''
+def verify_drone_count_matches_topology():
+    """Verify that the drone count matches the expected count for the chosen topology."""
+    expected_count = 10  # Our hardcoded and multi-swarm topologies use 10 nodes
+    
+    if args.drone_count != expected_count:
+        print(f"{Fore.RED}Warning: Your drone count ({args.drone_count}) doesn't match the expected count ({expected_count}) for the {args.grid_type} topology.")
+        print(f"{Fore.RED}This may cause unexpected behavior as some drones may not be placed in the grid.")
+        print(f"{Fore.YELLOW}Do you want to adjust the drone count to match the expected count? (yes/no):")
+        user_input = input()
+        if user_input.lower() == "yes":
+            args.drone_count = expected_count
+            print(f"{Fore.GREEN}Drone count adjusted to {args.drone_count}.")
+        else:
+            print(f"{Fore.YELLOW}Continuing with drone count: {args.drone_count}")
 
 def main():
     flask_thread = threading.Thread(target=run_flask_server)
     flask_thread.start()
     global matrix, processes, threads, all_leader_drones
 
+    # Verify drone count matches the expected count for the chosen topology
+    verify_drone_count_matches_topology()
+
     droneNum = args.drone_count
     droneImage = "cyu72/drone:simulation-terminal"
     gcsImage = "cyu72/gcs:simulation"
 
+    # Update leader drones based on topology selection
+    if args.grid_type == 'multi_swarm':
+        # For multi-swarm topology, we hardcode the leaders to match the topology
+        args.leader_drones = '1,6'
+        print(f"{Fore.CYAN}Multi-swarm topology selected. Leader drones set to: {args.leader_drones}")
+    
     # Pre-format the leader drones list for environment variables
     leader_drone_ids = args.leader_drones.split(',')
-    global all_leader_drones
     all_leader_drones = ','.join([f"drone{id.strip()}-service.default" for id in leader_drone_ids])
     formatted_leader_drones = all_leader_drones
+
+    # Print topology and leader information for clarity
+    print(f"{Fore.CYAN}Selected topology: {args.grid_type}")
+    print(f"{Fore.CYAN}Leader drones: {args.leader_drones}")
+    print(f"{Fore.CYAN}Formatted leader drones: {formatted_leader_drones}")
+
+    # Display additional topology information based on type
+    if args.grid_type == 'multi_swarm':
+        print(f"\n{Fore.CYAN}╔════════════════════════════════════════════╗")
+        print(f"{Fore.CYAN}║           MULTI-SWARM TOPOLOGY              ║")
+        print(f"{Fore.CYAN}╠════════════════════════════════════════════╣")
+        print(f"{Fore.CYAN}║ • 2 distinct swarms with dedicated leaders  ║")
+        print(f"{Fore.CYAN}║ • Leaders can communicate across swarms     ║")
+        print(f"{Fore.CYAN}║ • Each swarm operates independently         ║")
+        print(f"{Fore.CYAN}║ • Cross-swarm routing is enabled            ║")
+        print(f"{Fore.CYAN}╚════════════════════════════════════════════╝")
+        print(f"{Fore.GREEN}Swarm 1 Leader: Drone 1 (left side)")
+        print(f"{Fore.YELLOW}Swarm 2 Leader: Drone 6 (right side)")
+    elif args.grid_type == 'hardcoded':
+        print(f"\n{Fore.CYAN}╔════════════════════════════════════════════╗")
+        print(f"{Fore.CYAN}║           HARDCODED TOPOLOGY                ║")
+        print(f"{Fore.CYAN}╠════════════════════════════════════════════╣")
+        print(f"{Fore.CYAN}║ • Single swarm with multiple leaders        ║")
+        print(f"{Fore.CYAN}║ • Optimized for 10-node deployments         ║")
+        print(f"{Fore.CYAN}║ • Demonstrates scalability                  ║")
+        print(f"{Fore.CYAN}╚════════════════════════════════════════════╝")
 
     controller_addr = input("Enter the controller address: ")
 
@@ -270,6 +392,21 @@ def main():
     with open('etc/kubernetes/droneDeployment.yml', 'w') as file:
         nodePort = 30001
         for num in range(1, droneNum + 1):
+            # For multi-swarm mode, we need to provide additional environment variables
+            is_leader = num in [int(id) for id in args.leader_drones.split(',')]
+
+            # Additional environment variables for cross-swarm communication
+            additional_env = ""
+            if args.grid_type == 'multi_swarm' and is_leader:
+                # Add environment variable with list of other swarm leaders
+                other_leaders = [f"drone{id.strip()}-service.default" for id in args.leader_drones.split(',') if int(id.strip()) != num]
+                other_leaders_str = ','.join(other_leaders)
+                additional_env = f"""
+        - name: OTHER_SWARM_LEADERS
+          value: "{other_leaders_str}"
+        - name: GRID_TYPE
+          value: "{args.grid_type}" """
+
             drone = f"""apiVersion: v1
 kind: Pod
 metadata:
@@ -310,9 +447,9 @@ spec:
         - name: DISCOVERY_INTERVAL
           value: "{args.discovery_interval}"
         - name: IS_LEADER
-          value: "{'true' if num in [int(id) for id in args.leader_drones.split(',')] else 'false'}"
+          value: "{'true' if is_leader else 'false'}"
         - name: ENABLE_LEADER
-          value: "{args.enable_leader}"
+          value: "{args.enable_leader}"{additional_env}
       ports:
         - name: action-port
           protocol: TCP
@@ -450,13 +587,12 @@ data:
     while not valid_config:
         if args.grid_type == 'random':
             matrix = generate_random_matrix(args.grid_size, droneNum)
+        elif args.grid_type == 'multi_swarm':
+            matrix = generate_multi_swarm_matrix(args.grid_size, droneNum)
         else:
             matrix = generate_hardcoded_matrix(args.grid_size, droneNum)
 
-        for row in matrix:
-            for element in row:
-                print("{:2}".format(element), end=' ')
-            print()
+        print_matrix(matrix)
 
         user_input = input("Is this a valid configuration? (yes/no): ")
         if user_input.lower() == "yes":
@@ -511,7 +647,23 @@ data:
                     if matrix[i][j] != 0 and matrix[i][j] in leader_drones_ids:
                         leader_drones.append((matrix[i][j], i, j))
 
-            print(f"Selected leader drones: {leader_drones}")
+            # Display leader information with color-coded swarm identification
+            if args.grid_type == 'multi_swarm':
+                print(f"{Fore.CYAN}Selected leader drones (drone_id, row, col):")
+                for leader in leader_drones:
+                    if leader[0] == 1:
+                        swarm_color = Fore.GREEN
+                        swarm_name = "Swarm 1 (left side)"
+                    elif leader[0] == 6:
+                        swarm_color = Fore.YELLOW
+                        swarm_name = "Swarm 2 (right side)"
+                    else:
+                        swarm_color = Fore.WHITE
+                        swarm_name = "Unknown swarm"
+
+                    print(f"{swarm_color}  Drone {leader[0]} at position ({leader[1]},{leader[2]}) - {swarm_name}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.CYAN}Selected leader drones: {leader_drones}{Style.RESET_ALL}")
             break
 
         else:
