@@ -14,12 +14,12 @@ app = Flask(__name__)
 colorama.init(autoreset=True)
 matrix = []
 
-parser = argparse.ArgumentParser(description='TBD')
+parser = argparse.ArgumentParser(description='AZT Drone Security Protocol Controller')
 parser.add_argument('--drone_count', type=int, default=10, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
 parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
-parser.add_argument('--max_hop_count', type=int, default=25, help='Maximium number of nodes we can route messages through')
-parser.add_argument('--max_seq_count', type=int, default=50, help='Maximium number of sequence numbers we can store')
+parser.add_argument('--max_hop_count', type=int, default=25, help='Maximum number of nodes we can route messages through')
+parser.add_argument('--max_seq_count', type=int, default=50, help='Maximum number of sequence numbers we can store')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
 parser.add_argument('--grid_type', choices=['random', 'hardcoded', 'multi_swarm'], default='hardcoded',
@@ -31,7 +31,13 @@ parser.add_argument('--discovery_interval', type=int, default=360, help='Set the
 parser.add_argument('--enable_leader', type=str, default='True', help='Enable leader election')
 parser.add_argument('--leader_drones', type=str, default='1,5',
                     help='Comma-separated list of drone IDs that should be leaders')
+parser.add_argument('--controller_addr', type=str, help='Controller address for drone connection')
 args = parser.parse_args()
+
+# Global variables
+processes = []
+threads = []
+all_leader_drones = []
 
 def generate_random_matrix(n, numDrones):
     matrix = [[0] * n for _ in range(n)]
@@ -89,43 +95,36 @@ def generate_multi_swarm_matrix(n, numDrones):
 
     return matrix
 
-def run_command(command):
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    processes.append(process)
-    output, error = process.communicate()
-    return output.decode(), error.decode()
-
-def run_kubectl_command(command, description=""):
-    """Run a kubectl command with proper error handling.
-    
-    Args:
-        command: The kubectl command to run
-        description: Optional description for logging purposes
+def run_command(command, description="", add_to_processes=True):
+    if description:
+        print(f"{Fore.CYAN}{description}...{Style.RESET_ALL}")
         
-    Returns:
-        (bool, str): Success status and error message or output
-    """
-    try:
-        if description:
-            print(f"{Fore.CYAN}{description}...{Style.RESET_ALL}")
-        
-        result = subprocess.run(command, shell=True, check=False, 
-                               capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            error_msg = f"Error: {result.stderr}"
+    if add_to_processes:
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        processes.append(process)
+        output, error = process.communicate()
+        return output.decode(), error.decode()
+    else:
+        try:
+            result = subprocess.run(command, shell=True, check=False, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                error_msg = f"Error: {result.stderr}"
+                print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+                return False, error_msg
+            else:
+                if description:
+                    print(f"{Fore.GREEN}{description} completed successfully{Style.RESET_ALL}")
+                return True, result.stdout
+                
+        except Exception as e:
+            error_msg = f"Command failed: {str(e)}"
             print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
             return False, error_msg
-        else:
-            if description:
-                success_msg = f"{description} completed successfully"
-                print(f"{Fore.GREEN}{success_msg}{Style.RESET_ALL}")
-            return True, result.stdout
-            
-    except Exception as e:
-        error_msg = f"Command failed: {str(e)}"
-        print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
-        return False, error_msg
+
+# Alias for backward compatibility
+def run_kubectl_command(cmd, desc=""):
+    return run_command(cmd, desc, add_to_processes=False)
 
 def print_matrix(matrix):
     headers = [''] + [str(i) for i in range(len(matrix[0]))]
@@ -250,7 +249,7 @@ spec:
       port: 8080
     - protocol: TCP
       port: 60137"""
-                
+
                 # The common ports configuration
                 ports_config = """
     ports:
@@ -281,7 +280,7 @@ spec:
         file.write("\n---\n".join(policies))
 
     # Apply network policies using our utility function
-    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", 
+    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml",
                       "Applying network policies")
 
 def move_drone(matrix, drone, to_pos):
@@ -349,8 +348,37 @@ def update_coords():
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
 
+def get_available_ips():
+    """Get all available IP addresses for the server."""
+    import socket
+    
+    # Get all available IP addresses
+    hostname = socket.gethostname()
+    local_ip = socket.gethostbyname(hostname)
+    available_ips = ["127.0.0.1", local_ip]  # Always include localhost
+    
+    # Try to get all available IPs
+    try:
+        all_ips = socket.getaddrinfo(hostname, None)
+        for ip_info in all_ips:
+            ip = ip_info[4][0]
+            if ip not in available_ips and not ip.startswith("fe80") and ":" not in ip:  # Filter out IPv6
+                available_ips.append(ip)
+    except:
+        pass  # If we can't get additional IPs, just use what we have
+    
+    return available_ips
+
 def run_flask_server():
-    app.run(host='0.0.0.0', port=8080)
+    """Run the Flask coordinate server."""
+    # Suppress Flask output by redirecting logging
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)  # Only show errors, not standard startup messages
+    
+    # Run Flask app without the verbose output
+    print(f"{Fore.GREEN}Starting coordinate server on port 8080...{Style.RESET_ALL}")
+    app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
 
 def setup_port_forwarding(services):
     for service in services.items:
@@ -365,7 +393,7 @@ def setup_port_forwarding(services):
 def verify_drone_count_matches_topology():
     """Verify that the drone count matches the expected count for the chosen topology."""
     expected_count = 10  # Our hardcoded and multi-swarm topologies use 10 nodes
-    
+
     if args.drone_count != expected_count:
         print(f"{Fore.RED}Warning: Your drone count ({args.drone_count}) doesn't match the expected count ({expected_count}) for the {args.grid_type} topology.")
         print(f"{Fore.RED}This may cause unexpected behavior as some drones may not be placed in the grid.")
@@ -377,33 +405,47 @@ def verify_drone_count_matches_topology():
         else:
             print(f"{Fore.YELLOW}Continuing with drone count: {args.drone_count}")
 
-def main():
-    flask_thread = threading.Thread(target=run_flask_server)
-    flask_thread.start()
-    global matrix, processes, threads, all_leader_drones
+def get_controller_address():
+    """Get the controller address from command line args or prompt the user for input."""
+    controller_addr = args.controller_addr
+    
+    if not controller_addr:
+        # Display available IPs for convenience
+        available_ips = get_available_ips()
+        print(f"{Fore.CYAN}Available IP addresses for controller_addr:{Style.RESET_ALL}")
+        for ip in available_ips:
+            print(f"{Fore.YELLOW}  http://{ip}:8080{Style.RESET_ALL}")
+        
+        # Prompt for input
+        print(f"{Fore.CYAN}Enter the controller address (you can use one of the IPs listed above):{Style.RESET_ALL}")
+        controller_addr = input(f"{Fore.YELLOW}[default: localhost]: {Style.RESET_ALL}")
+        if not controller_addr:
+            controller_addr = "localhost"
+        
+    print(f"{Fore.GREEN}Using controller address: {controller_addr}{Style.RESET_ALL}")
+    return controller_addr
 
-    # Verify drone count matches the expected count for the chosen topology
-    verify_drone_count_matches_topology()
-
+def setup_deployment(controller_addr):
+    """Setup drone and GCS deployment files."""
     droneNum = args.drone_count
     droneImage = "cyu72/drone:simulation-terminal"
     gcsImage = "cyu72/gcs:simulation"
+    delim = "---\n"
 
     # Update leader drones based on topology selection
     if args.grid_type == 'multi_swarm':
         # For multi-swarm topology, we hardcode the leaders to match the topology
         args.leader_drones = '1,6'
         print(f"{Fore.CYAN}Multi-swarm topology selected. Leader drones set to: {args.leader_drones}")
-    
+
     # Pre-format the leader drones list for environment variables
     leader_drone_ids = args.leader_drones.split(',')
     all_leader_drones = ','.join([f"drone{id.strip()}-service.default" for id in leader_drone_ids])
     formatted_leader_drones = all_leader_drones
 
-    # Print topology and leader information for clarity
+    # Print topology and leader information
     print(f"{Fore.CYAN}Selected topology: {args.grid_type}")
     print(f"{Fore.CYAN}Leader drones: {args.leader_drones}")
-    print(f"{Fore.CYAN}Formatted leader drones: {formatted_leader_drones}")
 
     # Display additional topology information based on type
     if args.grid_type == 'multi_swarm':
@@ -426,25 +468,7 @@ def main():
         print(f"{Fore.CYAN}║ • Demonstrates scalability                  ║")
         print(f"{Fore.CYAN}╚════════════════════════════════════════════╝")
 
-    controller_addr = input("Enter the controller address: ")
-
-    if args.simulation_level == 'kube':
-        gcs_ip = 'gcs-service.default'
-
-    if args.startup:
-        # Use subprocess.run directly for minikube commands (non-kubectl)
-        subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
-        
-        # Use our utility function for kubectl commands
-        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml", 
-                          "Applying Calico networking")
-        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml", 
-                          "Applying MetalLB load balancer")
-        
-        # Use subprocess.run for minikube addon command
-        subprocess.run("minikube addons enable metallb", shell=True, check=True)
-
-    delim = "---\n"
+    gcs_ip = 'gcs-service.default' if args.simulation_level == 'kube' else 'localhost'
 
     with open('etc/kubernetes/droneDeployment.yml', 'w') as file:
         nodePort = 30001
@@ -637,17 +661,37 @@ data:
 """
 
         file.write(gcs + "\n" + delim + gcs_service + "\n" + delim + configMap + "\n")
-        file.close()
+    
+    return formatted_leader_drones, all_leader_drones
 
+def handle_minikube_startup():
+    """Handle minikube startup if needed."""
+    if args.startup:
+        # Use subprocess.run directly for minikube commands (non-kubectl)
+        subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
+
+        # Use our utility function for kubectl commands
+        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml",
+                        "Applying Calico networking")
+        run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml",
+                        "Applying MetalLB load balancer")
+
+        # Use subprocess.run for minikube addon command
+        subprocess.run("minikube addons enable metallb", shell=True, check=True)
+        time.sleep(45)  # Wait for everything to initialize
+
+def generate_grid_layout():
+    """Generate and validate the grid layout for drones."""
     valid_config = False
-
+    global matrix
+    
     while not valid_config:
         if args.grid_type == 'random':
-            matrix = generate_random_matrix(args.grid_size, droneNum)
+            matrix = generate_random_matrix(args.grid_size, args.drone_count)
         elif args.grid_type == 'multi_swarm':
-            matrix = generate_multi_swarm_matrix(args.grid_size, droneNum)
+            matrix = generate_multi_swarm_matrix(args.grid_size, args.drone_count)
         else:
-            matrix = generate_hardcoded_matrix(args.grid_size, droneNum)
+            matrix = generate_hardcoded_matrix(args.grid_size, args.drone_count)
 
         print_matrix(matrix)
 
@@ -655,86 +699,63 @@ data:
         if user_input.lower() == "yes":
             valid_config = True
             create_network_policies(matrix)
-
-    if (args.startup):
-        time.sleep(45)
-
-    # Apply drone deployment and network policies using our utility function
-    run_kubectl_command("kubectl apply -f etc/kubernetes/droneDeployment.yml", "Applying drone deployment")
-    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", "Applying network policies")
-
-    time.sleep(20)
-
-    print(f"{Fore.CYAN}Waiting for drone pods to be ready...{Style.RESET_ALL}")
-    droneNum = args.drone_count
-    ready_drones = 0
     
+    return matrix
+
+def wait_for_pods(droneNum):
+    """Wait for all drone pods to be ready."""
+    print(f"{Fore.CYAN}Waiting for drone pods to be ready...{Style.RESET_ALL}")
+    ready_drones = 0
+
     for num in range(1, droneNum + 1):
         wait_command = f"kubectl wait --for=condition=ready pod drone{num} --timeout=120s"
         success, output = run_kubectl_command(wait_command, f"Waiting for Drone{num}")
-        
+
         if success:
             print(f"{Fore.GREEN}Drone{num} is ready{Style.RESET_ALL}")
             ready_drones += 1
         else:
             print(f"{Fore.YELLOW}Warning: Timeout waiting for drone{num}{Style.RESET_ALL}")
-    
+
     # Summary of readiness
     if ready_drones == droneNum:
         print(f"{Fore.GREEN}All {droneNum} drones are ready!{Style.RESET_ALL}")
     else:
         print(f"{Fore.YELLOW}Only {ready_drones} out of {droneNum} drones are ready. Proceeding anyway...{Style.RESET_ALL}")
 
-    processes = []
-    threads = []
+def display_leader_drones(matrix):
+    """Display information about leader drones."""
+    leader_drones_ids = [int(id) for id in args.leader_drones.split(',')]
+    leader_drones = []
+    for i in range(len(matrix)):
+        for j in range(len(matrix[i])):
+            if matrix[i][j] != 0 and matrix[i][j] in leader_drones_ids:
+                leader_drones.append((matrix[i][j], i, j))
 
-    while True:
-        config.load_kube_config()
-        api_instance = client.CoreV1Api()
-
-        pods = api_instance.list_pod_for_all_namespaces(watch=False)
-        services = api_instance.list_service_for_all_namespaces()
-
-        all_running = True
-        for pod in pods.items:
-            if pod.status.phase != "Running":
-                all_running = False
-                time.sleep(2)
-                break
-
-        if all_running:
-            print("All pods are running")
-            setup_port_forwarding(services)
-
-            leader_drones_ids = [int(id) for id in args.leader_drones.split(',')]
-            leader_drones = []
-            for i in range(len(matrix)):
-                for j in range(len(matrix[i])):
-                    if matrix[i][j] != 0 and matrix[i][j] in leader_drones_ids:
-                        leader_drones.append((matrix[i][j], i, j))
-
-            # Display leader information with color-coded swarm identification
-            if args.grid_type == 'multi_swarm':
-                print(f"{Fore.CYAN}Selected leader drones (drone_id, row, col):")
-                for leader in leader_drones:
-                    if leader[0] == 1:
-                        swarm_color = Fore.GREEN
-                        swarm_name = "Swarm 1 (left side)"
-                    elif leader[0] == 6:
-                        swarm_color = Fore.YELLOW
-                        swarm_name = "Swarm 2 (right side)"
-                    else:
-                        swarm_color = Fore.WHITE
-                        swarm_name = "Unknown swarm"
-
-                    print(f"{swarm_color}  Drone {leader[0]} at position ({leader[1]},{leader[2]}) - {swarm_name}{Style.RESET_ALL}")
+    # Display leader information with color-coded swarm identification
+    if args.grid_type == 'multi_swarm':
+        print(f"{Fore.CYAN}Selected leader drones (drone_id, row, col):")
+        for leader in leader_drones:
+            if leader[0] == 1:
+                swarm_color = Fore.GREEN
+                swarm_name = "Swarm 1 (left side)"
+            elif leader[0] == 6:
+                swarm_color = Fore.YELLOW
+                swarm_name = "Swarm 2 (right side)"
             else:
-                print(f"{Fore.CYAN}Selected leader drones: {leader_drones}{Style.RESET_ALL}")
-            break
+                swarm_color = Fore.WHITE
+                swarm_name = "Unknown swarm"
 
-        else:
-            print("Not all pods are running")
+            print(f"{swarm_color}  Drone {leader[0]} at position ({leader[1]},{leader[2]}) - {swarm_name}{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.CYAN}Selected leader drones: {leader_drones}{Style.RESET_ALL}")
 
+def handle_drone_movement(matrix):
+    """Handle interactive drone movement."""
+    config.load_kube_config()
+    api_instance = client.CoreV1Api()
+    services = api_instance.list_service_for_all_namespaces()
+    
     while True:
         print_matrix(matrix)
         user_input = input("Enter move (drone_number to_i to_j) or 'q' to quit: ")
@@ -744,13 +765,12 @@ data:
             if func is None:
                 raise RuntimeError('Not running with the Werkzeug Server')
             func()
-            flask_thread.join()
             break
 
         try:
             drone, to_i, to_j = map(int, user_input.split())
             if matrix[to_i][to_j] != 0:
-                print(f"Error: Position ({to_i}, {to_j}) is not empty")
+                print(f"{Fore.RED}Error: Position ({to_i}, {to_j}) is not empty{Style.RESET_ALL}")
                 continue
 
             try:
@@ -761,11 +781,13 @@ data:
                         if matrix[i][j] == drone:
                             old_positions = {'drone': drone, 'i': i, 'j': j}
                             break
-                
+                    if old_positions:
+                        break
+
                 # Attempt to move the drone
                 matrix = move_drone(matrix, drone, (to_i, to_j))
                 print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
-                
+
                 # Update network policies
                 try:
                     create_network_policies(matrix)
@@ -778,30 +800,90 @@ data:
                         matrix[to_i][to_j] = 0
                         print(f"{Fore.YELLOW}Drone {drone} movement rolled back to original position{Style.RESET_ALL}")
                     raise policy_error
-                    
+
             except Exception as e:
                 print(f"{Fore.RED}Error: {str(e)}{Style.RESET_ALL}")
         except ValueError as e:
-            print(f"Error: {str(e)}")
+            print(f"{Fore.RED}Error: {str(e)}{Style.RESET_ALL}")
         except IndexError:
-            print("Invalid position. Please ensure all indices are within the matrix bounds.")
+            print(f"{Fore.RED}Invalid position. Please ensure all indices are within the matrix bounds.{Style.RESET_ALL}")
 
-        for service in services.items:
-            if service.spec.type == "LoadBalancer" and service.metadata.name.startswith("drone"):
-                drone_number = int(service.metadata.name.split("drone")[1].split("-")[0])
-                nodePort = 30000 + drone_number
-                print(f"Service: {service.metadata.name}")
-
-                for ingress in service.status.load_balancer.ingress:
-                    url = f"http://127.0.0.1:{nodePort}"
-                    print(f"Sending request to {url}")
-
-                    try:
-                        response = requests.get(url)
-                        response.raise_for_status()
-                    except requests.exceptions.RequestException as e:
-                        print(f"Failed to send info to Drone {drone_number}: {e}")
-
+def main():
+    global matrix, processes, threads, all_leader_drones
+    processes = []
+    threads = []
+    
+    print(f"{Fore.CYAN}=== AZT Drone Security Protocol Controller Setup ==={Style.RESET_ALL}")
+    
+    # Verify drone count matches the expected count for the chosen topology
+    verify_drone_count_matches_topology()
+    
+    # Get controller address (with available IPs)
+    controller_addr = get_controller_address()
+    
+    # Setup deployment files and get leader drones info
+    formatted_leader_drones, all_leader_drones = setup_deployment(controller_addr)
+    
+    # Handle minikube startup if needed
+    handle_minikube_startup()
+    
+    # Generate grid layout
+    matrix = generate_grid_layout()
+    
+    print(f"{Fore.CYAN}=== Starting Network Services ==={Style.RESET_ALL}")
+    
+    # Start the Flask server
+    flask_thread = threading.Thread(target=run_flask_server)
+    flask_thread.daemon = True  
+    flask_thread.start()
+    
+    # Give Flask a moment to start up
+    time.sleep(1)
+    
+    # Apply drone deployment
+    run_kubectl_command("kubectl apply -f etc/kubernetes/droneDeployment.yml", "Applying drone deployment")
+    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", "Applying network policies")
+    
+    # Wait for pods
+    time.sleep(20)
+    wait_for_pods(args.drone_count)
+    
+    # Wait for pods to be ready and monitor their status
+    while True:
+        config.load_kube_config()
+        api_instance = client.CoreV1Api()
+        
+        pods = api_instance.list_pod_for_all_namespaces(watch=False)
+        services = api_instance.list_service_for_all_namespaces()
+        
+        all_running = True
+        for pod in pods.items:
+            if pod.status.phase != "Running":
+                all_running = False
+                time.sleep(2)
+                break
+        
+        if all_running:
+            print(f"{Fore.GREEN}All pods are running{Style.RESET_ALL}")
+            setup_port_forwarding(services)
+            display_leader_drones(matrix)
+            break
+        else:
+            print(f"{Fore.YELLOW}Not all pods are running. Waiting...{Style.RESET_ALL}")
+            time.sleep(5)
+    
+    # Handle drone movement
+    handle_drone_movement(matrix)
+    
+    # Clean up
+    for thread in threads:
+        thread.join(timeout=0.5)
+    
+    for process in processes:
+        try:
+            process.terminate()
+        except:
+            pass
 
 if __name__ == "__main__":
     main()
