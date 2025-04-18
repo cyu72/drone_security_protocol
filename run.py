@@ -22,8 +22,8 @@ parser.add_argument('--max_hop_count', type=int, default=25, help='Maximum numbe
 parser.add_argument('--max_seq_count', type=int, default=50, help='Maximum number of sequence numbers we can store')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
-parser.add_argument('--grid_type', choices=['random', 'hardcoded', 'multi_swarm'], default='hardcoded',
-                    help='Choose between random, hardcoded grid, or multi-swarm topology')
+parser.add_argument('--grid_type', choices=['random', 'large_hop', 'multi_swarm', 'large_hop_extended'], default='large_hop',
+                    help='Choose between random, large hop grid, multi-swarm, or large hop extended (21 hops) topology')
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
 parser.add_argument('--SKIP_VERIFICATION', choices=['True', 'False'], default='True', help='Skip verification for certification yield')
@@ -53,22 +53,22 @@ def generate_random_matrix(n, numDrones):
 
     return matrix
 
-def generate_hardcoded_matrix(n, numDrones):
+def generate_large_hop_extended_matrix(n, numDrones):
     array = [
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 10, 9, 0, 0, 0, 0, 0],
+        [0, 16, 17, 18, 19, 20, 21, 9, 0, 0, 0, 0],
+        [0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 13, 12, 11, 7, 10, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 7, 6, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 3, 4, 5, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     ]
-
+        
     return array
 
 def generate_multi_swarm_matrix(n, numDrones):
@@ -133,8 +133,9 @@ def print_matrix(matrix):
     swarm1_range = list(range(1, 6))  # Drone IDs 1-5
     swarm2_range = list(range(6, 11)) # Drone IDs 6-10
 
-    # Check if using multi-swarm topology
+    # Check topology type
     multi_swarm_mode = hasattr(args, 'grid_type') and args.grid_type == 'multi_swarm'
+    large_hop_extended_mode = hasattr(args, 'grid_type') and args.grid_type == 'large_hop_extended'
 
     table_data = []
     for i, row in enumerate(matrix):
@@ -153,8 +154,17 @@ def print_matrix(matrix):
                 else:
                     # Default for any other drones
                     colored_row.append(f"{Fore.BLUE}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
+            elif large_hop_extended_mode:
+                # Special coloring for large hop extended mode to show path progression
+                # Color gradient from blue to red based on drone ID (1-21)
+                if 1 <= element <= 7:  # First segment (blue to cyan)
+                    colored_row.append(f"{Fore.BLUE}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
+                elif 8 <= element <= 14:  # Middle segment (cyan to magenta)
+                    colored_row.append(f"{Fore.CYAN}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
+                else:  # Last segment (magenta to red)
+                    colored_row.append(f"{Fore.MAGENTA}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
             else:
-                # Standard display for non-multi-swarm topology
+                # Standard display for other topologies
                 colored_row.append(f"{Fore.GREEN}{Back.LIGHTWHITE_EX}{element:2}{Style.RESET_ALL}")
         table_data.append(colored_row)
 
@@ -166,6 +176,13 @@ def print_matrix(matrix):
         print(f"{Fore.GREEN}{Back.LIGHTWHITE_EX} Swarm 1 {Style.RESET_ALL} | "
               f"{Fore.YELLOW}{Back.LIGHTWHITE_EX} Swarm 2 {Style.RESET_ALL} | "
               f"{Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
+    elif large_hop_extended_mode:
+        print(f"\n{Fore.CYAN}Legend:")
+        print(f"{Fore.BLUE}{Back.LIGHTWHITE_EX} Start Path {Style.RESET_ALL} | "
+              f"{Fore.CYAN}{Back.LIGHTWHITE_EX} Mid Path {Style.RESET_ALL} | "
+              f"{Fore.MAGENTA}{Back.LIGHTWHITE_EX} End Path {Style.RESET_ALL} | "
+              f"{Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
+        print(f"{Fore.CYAN}This topology demonstrates routing through {args.drone_count} hops in a linear arrangement.")
     else:
         print(f"\n{Fore.CYAN}Legend: {Fore.GREEN}{Back.LIGHTWHITE_EX} Drone {Style.RESET_ALL} | "
               f"{Fore.LIGHTBLACK_EX}0{Style.RESET_ALL} Empty Space")
@@ -391,19 +408,66 @@ def setup_port_forwarding(services):
             threads.append(thread)
 
 def verify_drone_count_matches_topology():
-    """Verify that the drone count matches the expected count for the chosen topology."""
-    expected_count = 10  # Our hardcoded and multi-swarm topologies use 10 nodes
-
-    if args.drone_count != expected_count:
-        print(f"{Fore.RED}Warning: Your drone count ({args.drone_count}) doesn't match the expected count ({expected_count}) for the {args.grid_type} topology.")
-        print(f"{Fore.RED}This may cause unexpected behavior as some drones may not be placed in the grid.")
-        print(f"{Fore.YELLOW}Do you want to adjust the drone count to match the expected count? (yes/no):")
+    """Verify that the drone count matches the expected count for the chosen topology 
+    and update routing parameters based on topology requirements."""
+    
+    # Define topology-specific configurations
+    topology_configs = {
+        'multi_swarm': {
+            'drone_count': 10,
+            'max_hop_count': 25,
+            'max_seq_count': 50
+        },
+        'large_hop': {
+            'drone_count': 10,
+            'max_hop_count': 25,
+            'max_seq_count': 50
+        },
+        'large_hop_extended': {
+            'drone_count': 21,
+            'max_hop_count': 25,
+            'max_seq_count': 50
+        },
+        'random': {
+            'drone_count': 10,
+            'max_hop_count': 25,
+            'max_seq_count': 50
+        }
+    }
+    
+    # Get the configuration for the selected topology
+    topo_config = topology_configs.get(args.grid_type)
+    if not topo_config:
+        print(f"{Fore.RED}Warning: Unknown topology type: {args.grid_type}. Using default parameters.")
+        return
+    
+    expected_count = topo_config['drone_count']
+    
+    # Check if parameters match the expected configuration
+    params_match = (
+        args.drone_count == topo_config['drone_count'] and
+        args.max_hop_count == topo_config['max_hop_count'] and
+        args.max_seq_count == topo_config['max_seq_count']
+    )
+    
+    if not params_match:
+        print(f"{Fore.YELLOW}Topology '{args.grid_type}' requires specific parameters:")
+        print(f"{Fore.YELLOW}  - Drone count: {topo_config['drone_count']} (currently: {args.drone_count})")
+        print(f"{Fore.YELLOW}  - Max hop count: {topo_config['max_hop_count']} (currently: {args.max_hop_count})")
+        print(f"{Fore.YELLOW}  - Max seq count: {topo_config['max_seq_count']} (currently: {args.max_seq_count})")
+        
+        print(f"{Fore.YELLOW}Do you want to adjust these parameters to match the topology requirements? (yes/no):")
         user_input = input()
         if user_input.lower() == "yes":
-            args.drone_count = expected_count
-            print(f"{Fore.GREEN}Drone count adjusted to {args.drone_count}.")
+            args.drone_count = topo_config['drone_count']
+            args.max_hop_count = topo_config['max_hop_count']
+            args.max_seq_count = topo_config['max_seq_count']
+            print(f"{Fore.GREEN}Parameters adjusted to match '{args.grid_type}' topology requirements:")
+            print(f"{Fore.GREEN}  - Drone count: {args.drone_count}")
+            print(f"{Fore.GREEN}  - Max hop count: {args.max_hop_count}")
+            print(f"{Fore.GREEN}  - Max seq count: {args.max_seq_count}")
         else:
-            print(f"{Fore.YELLOW}Continuing with drone count: {args.drone_count}")
+            print(f"{Fore.YELLOW}Continuing with current parameters. This may cause unexpected behavior.")
 
 def get_controller_address():
     """Get the controller address from command line args or prompt the user for input."""
@@ -437,6 +501,10 @@ def setup_deployment(controller_addr):
         # For multi-swarm topology, we hardcode the leaders to match the topology
         args.leader_drones = '1,6'
         print(f"{Fore.CYAN}Multi-swarm topology selected. Leader drones set to: {args.leader_drones}")
+    elif args.grid_type == 'large_hop_extended':
+        # For large hop extended topology, set first node as the leader
+        args.leader_drones = '1'
+        print(f"{Fore.CYAN}Large hop extended topology selected. Leader drone set to: {args.leader_drones}")
 
     # Pre-format the leader drones list for environment variables
     leader_drone_ids = args.leader_drones.split(',')
@@ -459,6 +527,16 @@ def setup_deployment(controller_addr):
         print(f"{Fore.CYAN}╚════════════════════════════════════════════╝")
         print(f"{Fore.GREEN}Swarm 1 Leader: Drone 1 (left side)")
         print(f"{Fore.YELLOW}Swarm 2 Leader: Drone 6 (right side)")
+    elif args.grid_type == 'large_hop_extended':
+        print(f"\n{Fore.CYAN}╔════════════════════════════════════════════╗")
+        print(f"{Fore.CYAN}║        LARGE HOP EXTENDED TOPOLOGY          ║")
+        print(f"{Fore.CYAN}╠════════════════════════════════════════════╣")
+        print(f"{Fore.CYAN}║ • 21 drones arranged in a linear path       ║")
+        print(f"{Fore.CYAN}║ • Demonstrates routing through many hops    ║")
+        print(f"{Fore.CYAN}║ • Tests protocol efficiency with long paths ║")
+        print(f"{Fore.CYAN}║ • Max hop count: {args.max_hop_count}                      ║")
+        print(f"{Fore.CYAN}║ • Max sequence count: {args.max_seq_count}                ║")
+        print(f"{Fore.CYAN}╚════════════════════════════════════════════╝")
     elif args.grid_type == 'hardcoded':
         print(f"\n{Fore.CYAN}╔════════════════════════════════════════════╗")
         print(f"{Fore.CYAN}║           HARDCODED TOPOLOGY                ║")
@@ -690,8 +768,8 @@ def generate_grid_layout():
             matrix = generate_random_matrix(args.grid_size, args.drone_count)
         elif args.grid_type == 'multi_swarm':
             matrix = generate_multi_swarm_matrix(args.grid_size, args.drone_count)
-        else:
-            matrix = generate_hardcoded_matrix(args.grid_size, args.drone_count)
+        elif args.grid_type == 'large_hop_extended':
+            matrix = generate_large_hop_extended_matrix(args.grid_size, args.drone_count)
 
         print_matrix(matrix)
 
