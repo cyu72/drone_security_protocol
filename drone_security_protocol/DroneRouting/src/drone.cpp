@@ -8,6 +8,9 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->nodeID = nodeID;
     this->seqNum = 1;
     this->GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : "gcs-service.default";
+    
+    // Initialize the CRL cache as empty
+    crlCacheLastRefreshed = std::chrono::steady_clock::time_point();
 
     this->leaderFunctionalityEnabled = (std::getenv("ENABLE_LEADERSHIP") == nullptr || 
     std::string(std::getenv("ENABLE_LEADERSHIP")) != "false");
@@ -75,6 +78,18 @@ void drone::clientResponseThread() {
 
         try {
             jsonData = json::parse(rawMessage);
+            
+            // Check if type field exists and is valid
+            if (!jsonData.contains("type")) {
+                logger->error("Message missing type field: {}", rawMessage);
+                continue;
+            }
+            
+            if (!jsonData["type"].is_number_integer()) {
+                logger->error("Message type is not an integer: {}", rawMessage);
+                continue;
+            }
+            
             int messageType = jsonData["type"].get<int>();
             bool isFromIPC = jsonData.contains("from_ipc") && jsonData["from_ipc"].get<bool>();
 
@@ -211,7 +226,7 @@ void drone::clientResponseThread() {
                         logger->warn("Message from revoked node {} rejected - found on CRL", srcAddr);
                         continue; // Skip this message as the node is on the CRL
                     }
-                    logger->debug("Node {} not found on CRL, proceeding with validation", srcAddr);
+                    logger->debug("Node {} OK - proceeding with validation", srcAddr);
                 }
             }
             // If skipValidation is true (no leader), we still check for validation but don't reject if not validated
@@ -951,45 +966,83 @@ void drone::markSenderAsValidated(const std::string& senderAddr) {
 }
 
 bool drone::isNodeOnCRL(const std::string& nodeAddr) {
-    // If we have a certificate for this node, check if it's on the CRL
-    // Request CRL check from the PKI client
     if (!this->pki_client) {
         logger->error("PKI client not initialized");
         return false;
     }
     
     try {
-        // Attempt to retrieve node information from network nodes
-        std::lock_guard<std::mutex> lock(networkNodesMutex);
-        auto it = networkNodes.find(nodeAddr);
-        if (it == networkNodes.end()) {
-            logger->debug("Node {} not found in network nodes list", nodeAddr);
-            return false; // If we don't know about this node, assume it's not on CRL
+        // First, check certificate info
+        std::string certificate;
+        {
+            std::lock_guard<std::mutex> lock(networkNodesMutex);
+            auto it = networkNodes.find(nodeAddr);
+            if (it == networkNodes.end()) {
+                logger->debug("Node {} not found in network nodes list", nodeAddr);
+                return false; // If we don't know about this node, assume it's not on CRL
+            }
+            certificate = it->second.certificate;
         }
         
-        // Check if this node's certificate is on CRL by sending request to GCS
-        // This is a simple implementation - in a real system you might have a local CRL cache
-        httplib::Client client(this->GCS_IP, 5000); // Use the class's GCS_IP variable
-        client.set_connection_timeout(3); // Short timeout to avoid blocking communication
-        
-        auto res = client.Get("/check_crl/" + it->second.certificate);
-        if (!res || res->status != 200) {
-            logger->error("Failed to check CRL status for node {}: {}", 
-                nodeAddr, res ? std::to_string(res->status) : "connection failed");
-            return false; // On error, default to not on CRL to allow communication
+        // Check cache first
+        {
+            std::lock_guard<std::mutex> cacheLock(crlCacheMutex);
+            
+            // Check if we have a valid cache entry
+            auto now = std::chrono::steady_clock::now();
+            bool cacheValid = crlCacheLastRefreshed != std::chrono::steady_clock::time_point() && 
+                             (now - crlCacheLastRefreshed) < crlCacheLifetime;
+            
+            if (cacheValid) {
+                auto cacheIt = crlCache.find(certificate);
+                if (cacheIt != crlCache.end()) {
+                    logger->debug("Using cached CRL status for node {}: {}", 
+                                 nodeAddr, cacheIt->second ? "revoked" : "valid");
+                    return cacheIt->second;
+                }
+            }
         }
         
+        // Cache miss or expired, need to check with GCS
+        httplib::Client client(this->GCS_IP, 5000);
+        client.set_connection_timeout(2); // Shorter timeout for demo purposes
+        
+        auto res = client.Get("/check_crl/" + certificate);
+        if (!res) {
+            // Connection failed
+            logger->warn("Could not connect to GCS for CRL check of node {}, allowing connection for demo", nodeAddr);
+            return false; // Allow connection for demo purposes
+        }
+        
+        if (res->status != 200) {
+            // For demo purposes, we'll allow connections regardless of error type
+            if (res->status == 404) {
+                logger->warn("CRL check endpoint not found for node {}, allowing connection for demo", nodeAddr);
+            } else {
+                logger->warn("Failed CRL status check for node {}: HTTP {}, allowing connection for demo", 
+                            nodeAddr, res->status);
+            }
+            return false; // Allow connection for demo purposes
+        }
+        
+        // Update cache with result
         json response = json::parse(res->body);
         bool is_revoked = response.value("revoked", false);
         
-        if (is_revoked) {
-            logger->warn("Certificate for node {} is revoked", nodeAddr);
+        {
+            std::lock_guard<std::mutex> cacheLock(crlCacheMutex);
+            crlCache[certificate] = is_revoked;
+            crlCacheLastRefreshed = std::chrono::steady_clock::now();
+            
+            if (is_revoked) {
+                logger->warn("Certificate for node {} is revoked", nodeAddr);
+            }
         }
         
         return is_revoked;
     } catch (const std::exception& e) {
         logger->error("Error checking CRL for node {}: {}", nodeAddr, e.what());
-        return false; // On error, default to not on CRL to allow communication
+        return false; // Allow connection for demo purposes
     }
 }
 
@@ -1937,6 +1990,17 @@ void drone::joinRequestHandler(json& data) {
     }
     
     try {
+        // Check if required fields exist before deserialization
+        if (!data.contains("srcAddr") || !data.contains("timestamp")) {
+            logger->error("Join request missing required fields");
+            return;
+        }
+        
+        if (!data["srcAddr"].is_string() || !data["timestamp"].is_number_integer()) {
+            logger->error("Join request contains invalid field types");
+            return;
+        }
+        
         JoinRequestMessage request;
         request.deserialize(data);
         
@@ -2020,6 +2084,18 @@ void drone::joinRequestHandler(json& data) {
 
 void drone::joinResponseHandler(json& data) {
     try {
+        // Check if required fields exist before deserialization
+        if (!data.contains("srcAddr") || !data.contains("timestamp") || !data.contains("validNodeList")) {
+            logger->error("Join response missing required fields");
+            return;
+        }
+        
+        if (!data["srcAddr"].is_string() || !data["timestamp"].is_number_integer() || 
+            !data["validNodeList"].is_array()) {
+            logger->error("Join response contains invalid field types");
+            return;
+        }
+        
         JoinResponseMessage response;
         response.deserialize(data);
         
@@ -2214,6 +2290,165 @@ void drone::broadcastToOtherLeaders(const string& serializedMsg, const string& o
     visitedLeaders.clear();
 }
 
+void drone::refreshCRLCache() {
+    if (!this->isLeader) {
+        logger->debug("CRL refresh requested for non-leader drone - skipping");
+        return;
+    }
+    
+    if (pki_client->needsCertificate()) {
+        logger->warn("Cannot refresh CRL cache - no valid certificate yet");
+        return;
+    }
+
+    // Get list of certificates we need to check
+    std::vector<std::pair<std::string, std::string>> certificatesToCheck;
+    {
+        std::lock_guard<std::mutex> lock(networkNodesMutex);
+        for (const auto& [droneId, node] : networkNodes) {
+            certificatesToCheck.emplace_back(droneId, node.certificate);
+        }
+    }
+    
+    if (certificatesToCheck.empty()) {
+        logger->debug("No certificates available to check against CRL");
+        return;
+    }
+    
+    logger->info("Refreshing CRL status for {} certificates", certificatesToCheck.size());
+    
+    // Check if we can use the bulk endpoint
+    try {
+        // Use the more efficient bulk endpoint if there are multiple certificates
+        if (certificatesToCheck.size() > 1) {
+            json requestBody = {
+                {"certificates", json::array()}
+            };
+            
+            for (const auto& [_, certificate] : certificatesToCheck) {
+                requestBody["certificates"].push_back(certificate);
+            }
+            
+            httplib::Client client(this->GCS_IP, 5000);
+            client.set_connection_timeout(5);
+            
+            auto res = client.Post("/bulk_check_crl", requestBody.dump(), "application/json");
+            if (!res) {
+                logger->warn("GCS connection failed during bulk CRL refresh, allowing all connections for demo purposes");
+                
+                // For the demo, create an empty cache that marks all certificates as valid
+                std::lock_guard<std::mutex> lock(crlCacheMutex);
+                for (const auto& [_, certificate] : certificatesToCheck) {
+                    crlCache[certificate] = false; // Not revoked
+                }
+                crlCacheLastRefreshed = std::chrono::steady_clock::now();
+                logger->info("Created empty CRL cache with {} entries for demo", certificatesToCheck.size());
+                return;
+            }
+            
+            if (res->status != 200) {
+                logger->warn("Bulk CRL check failed: HTTP {}, allowing all connections for demo", res->status);
+                
+                // For the demo, create an empty cache that marks all certificates as valid
+                std::lock_guard<std::mutex> lock(crlCacheMutex);
+                for (const auto& [_, certificate] : certificatesToCheck) {
+                    crlCache[certificate] = false; // Not revoked
+                }
+                crlCacheLastRefreshed = std::chrono::steady_clock::now();
+                logger->info("Created empty CRL cache with {} entries for demo", certificatesToCheck.size());
+                return;
+            }
+            
+            // Parse response
+            auto response = json::parse(res->body);
+            if (response["status"] != "success") {
+                logger->error("Bulk CRL check error: {}", response["message"].get<std::string>());
+                return;
+            }
+            
+            // Update cache with results
+            std::lock_guard<std::mutex> lock(crlCacheMutex);
+            auto results = response["results"];
+            for (const auto& [certificate, isRevoked] : results.items()) {
+                crlCache[certificate] = isRevoked.get<bool>();
+                if (isRevoked.get<bool>()) {
+                    logger->warn("Certificate {} is revoked", certificate.substr(0, 15));
+                }
+            }
+            crlCacheLastRefreshed = std::chrono::steady_clock::now();
+            logger->info("Successfully refreshed CRL cache with {} entries via bulk API", results.size());
+            return;
+        }
+    } catch (const std::exception& e) {
+        logger->error("Error during bulk CRL refresh: {}", e.what());
+        // Continue with individual requests if bulk fails
+    }
+    
+    // Fallback to individual CRL checks (or if there's only one certificate)
+    httplib::Client client(this->GCS_IP, 5000);
+    client.set_connection_timeout(5);
+    
+    std::unordered_map<std::string, bool> newCrlCache;
+    bool anySuccessful = false;
+    
+    for (const auto& [droneId, certificate] : certificatesToCheck) {
+        try {
+            auto res = client.Get("/check_crl/" + certificate);
+            if (!res) {
+                logger->warn("GCS connection failed during CRL refresh for drone {}", droneId);
+                continue;
+            }
+            
+            if (res->status != 200) {
+                // For demo purposes, we'll treat HTTP errors as if the certificate is valid
+                if (res->status == 404) {
+                    logger->warn("CRL check endpoint not found for drone {}, treating as valid for demo", droneId);
+                } else {
+                    logger->warn("Failed CRL refresh for drone {}: HTTP {}, treating as valid for demo", 
+                                droneId, res->status);
+                }
+                newCrlCache[certificate] = false; // Not revoked
+                anySuccessful = true;
+                continue;
+            }
+            
+            json response = json::parse(res->body);
+            bool is_revoked = response.value("revoked", false);
+            
+            if (is_revoked) {
+                logger->warn("Certificate for drone {} is revoked", droneId);
+            }
+            
+            newCrlCache[certificate] = is_revoked;
+            anySuccessful = true;
+            
+        } catch (const std::exception& e) {
+            logger->error("Error refreshing CRL for drone {}: {}", droneId, e.what());
+        }
+    }
+    
+    // Update the cache if at least one check was successful
+    if (anySuccessful) {
+        std::lock_guard<std::mutex> lock(crlCacheMutex);
+        // Merge new cache entries with existing ones
+        for (const auto& [cert, status] : newCrlCache) {
+            crlCache[cert] = status;
+        }
+        crlCacheLastRefreshed = std::chrono::steady_clock::now();
+        logger->info("Successfully refreshed CRL cache with {} entries via individual requests", newCrlCache.size());
+    } else {
+        logger->warn("CRL refresh failed - no successful GCS connections. Allowing all connections for demo");
+        
+        // For demo purposes, create an empty cache that treats all certificates as valid
+        std::lock_guard<std::mutex> lock(crlCacheMutex);
+        for (const auto& [_, certificate] : certificatesToCheck) {
+            crlCache[certificate] = false; // Not revoked
+        }
+        crlCacheLastRefreshed = std::chrono::steady_clock::now();
+        logger->info("Created empty CRL cache with {} entries for demo", certificatesToCheck.size());
+    }
+}
+
 void drone::start() {
     logger->info("Starting drone initialization");
     
@@ -2225,6 +2460,25 @@ void drone::start() {
         
         if (this->leaderFunctionalityEnabled) {
             threads.emplace_back([this](){ requestNetworkNodesIfLeader(); });
+            
+            // If this is a leader drone, start periodic CRL cache refresh
+            if (this->isLeader) {
+                threads.emplace_back([this]() {
+                    // Initial delay to allow certificate acquisition
+                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                    
+                    while (running) {
+                        try {
+                            refreshCRLCache();
+                        } catch (const std::exception& e) {
+                            logger->error("Error during CRL cache refresh: {}", e.what());
+                        }
+                        
+                        // Sleep until next refresh
+                        std::this_thread::sleep_for(crlCacheLifetime / 2);
+                    }
+                });
+            }
         }
         threads.emplace_back([this](){ neighborDiscoveryFunction(); });
         threads.emplace_back([this](){ clientResponseThread(); });

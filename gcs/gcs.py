@@ -83,6 +83,87 @@ class GCS:
                 except Exception as e:
                     return jsonify({'status': 'error', 'message': str(e)}), 500
                 
+            @self.app.route('/check_crl/<certificate>', methods=['GET'])
+            def check_certificate_revocation(certificate):
+                try:
+                    self.logger.info(f"Received CRL check request for certificate: {certificate[:15]}...")
+                    
+                    # Validate the certificate parameter
+                    if not certificate:
+                        return jsonify({'status': 'error', 'message': 'Certificate parameter is required'}), 400
+                    
+                    # Check if the certificate is revoked using the CRL manager
+                    is_revoked = self.crl_manager.is_cert_revoked(certificate)
+                    
+                    # Log the result
+                    self.logger.info(f"Certificate {certificate[:15]}... is {'revoked' if is_revoked else 'valid'}")
+                    
+                    # Return the result
+                    return jsonify({
+                        'status': 'success',
+                        'certificate': certificate[:15] + "...",  # Return truncated certificate for logs
+                        'revoked': is_revoked,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }), 200
+                    
+                except Exception as e:
+                    self.logger.error(f"Error checking certificate revocation: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                    
+            @self.app.route('/bulk_check_crl', methods=['POST'])
+            def bulk_check_certificate_revocation():
+                try:
+                    # Get the list of certificates from the request
+                    data = request.get_json()
+                    if not data or not isinstance(data, dict) or 'certificates' not in data:
+                        return jsonify({'status': 'error', 'message': 'Invalid request format. Expected JSON with "certificates" array'}), 400
+                    
+                    certificates = data.get('certificates', [])
+                    if not certificates or not isinstance(certificates, list):
+                        return jsonify({'status': 'error', 'message': 'Invalid or empty certificates list'}), 400
+                    
+                    self.logger.info(f"Received bulk CRL check request for {len(certificates)} certificates")
+                    
+                    # Check each certificate
+                    results = {}
+                    for cert in certificates:
+                        results[cert] = self.crl_manager.is_cert_revoked(cert)
+                    
+                    # Return the results
+                    return jsonify({
+                        'status': 'success',
+                        'results': results,
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'crl_last_update': self.crl_manager.last_update.isoformat()
+                    }), 200
+                
+                except Exception as e:
+                    self.logger.error(f"Error performing bulk CRL check: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                    
+            @self.app.route('/crl_status', methods=['GET'])
+            def get_crl_status():
+                try:
+                    # Get CRL status information
+                    status = self.crl_manager.get_crl_status()
+                    
+                    # Add additional information for the response
+                    status['total_issued_certificates'] = len(self.issued_certificates)
+                    status['revocation_percentage'] = (
+                        (status['revoked_count'] / status['total_issued_certificates'] * 100)
+                        if status['total_issued_certificates'] > 0 else 0
+                    )
+                    
+                    # Return the status
+                    return jsonify({
+                        'status': 'success',
+                        'crl_info': status
+                    }), 200
+                
+                except Exception as e:
+                    self.logger.error(f"Error retrieving CRL status: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                
     def is_leader_drone(self, drone_id: str, auth_token: str) -> bool:
         """Verify if the requesting drone is a leader"""
         # For basic implementation, just check if the drone ID is in our leader set

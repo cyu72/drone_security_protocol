@@ -1,6 +1,7 @@
 import socket
 import threading
 import logging
+import os
 from pathlib import Path
 from messages import MESSAGE_TYPE, GCS_MESSAGE, RREQ, RREP
 from gcs import GCS
@@ -8,6 +9,8 @@ from gcs import GCS
 # Constants
 PORT_NUMBER = 80
 BRDCST_PORT = 65467
+FLASK_PORT = int(os.getenv('FLASK_PORT', '5000'))
+FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
 
 class GCS_SERVER:
     def __init__(self):
@@ -120,10 +123,13 @@ class GCS_SERVER:
         """Start the server"""
         try:
             # Start GCS Flask server in a separate thread
-            gcs_thread = threading.Thread(target=self.gcs.run)
+            gcs_thread = threading.Thread(
+                target=self.gcs.run,
+                kwargs={'host': FLASK_HOST, 'port': FLASK_PORT}
+            )
             gcs_thread.daemon = True
             gcs_thread.start()
-            self.logger.info("GCS server started")
+            self.logger.info(f"GCS REST API server started on {FLASK_HOST}:{FLASK_PORT}")
             
             # Create main socket server
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

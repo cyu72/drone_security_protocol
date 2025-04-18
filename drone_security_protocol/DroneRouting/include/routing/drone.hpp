@@ -196,6 +196,13 @@ class drone {
 
         std::vector<NetworkNode> getNetworkNodes();
         bool isNodeInNetwork(const std::string& droneId);
+        
+        // CRL cache to avoid repeated network requests
+        std::unordered_map<std::string, bool> crlCache;
+        std::chrono::steady_clock::time_point crlCacheLastRefreshed;
+        std::mutex crlCacheMutex;
+        const std::chrono::minutes crlCacheLifetime{10}; // Cache CRL results for 10 minutes
+        void refreshCRLCache(); // Refresh the CRL cache for all known certificates
 
         string addr;
         int port;
