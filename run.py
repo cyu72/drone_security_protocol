@@ -329,13 +329,27 @@ spec:
     with open('etc/kubernetes/deploymentNetworkPolicy.yml', 'w') as file:
         file.write("\n---\n".join(policies))
 
-def move_drone(matrix, drone, to_pos):
+def move_drone(matrix, drone, to_pos, update_network=True):
+    """
+    Move a drone to a new position in the matrix.
+    
+    Args:
+        matrix: The grid matrix
+        drone: The drone number to move
+        to_pos: Tuple (i, j) representing the target position
+        update_network: Whether to update network policies after movement
+    
+    Returns:
+        Updated matrix
+    """
     to_i, to_j = to_pos
     for i in range(len(matrix)):
         for j in range(len(matrix[i])):
             if matrix[i][j] == drone:
                 matrix[i][j] = 0
                 matrix[to_i][to_j] = drone
+                if update_network:
+                    create_network_policies(matrix)
                 return matrix
     raise ValueError(f"Drone {drone} not found in the matrix")
 
@@ -376,7 +390,6 @@ def update_coords():
 
         try:
             matrix = move_drone(matrix, drone, (to_i, to_j))
-            create_network_policies(matrix)
             print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
             print(f"{Fore.GREEN}Matrix updated and network policies updated.{Style.RESET_ALL}")
             print_matrix(matrix)
@@ -886,13 +899,11 @@ def handle_drone_movement(matrix):
                     if old_positions:
                         break
 
-                # Attempt to move the drone
-                matrix = move_drone(matrix, drone, (to_i, to_j))
-                print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
-
-                # Update network policies
+                # Attempt to move the drone with network policy update
                 try:
-                    create_network_policies(matrix)
+                    matrix = move_drone(matrix, drone, (to_i, to_j), update_network=True)
+                    print(f"{Fore.GREEN}Drone {drone} moved to position ({to_i}, {to_j}){Style.RESET_ALL}")
+                    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml", "Applying network policies")
                     print(f"{Fore.GREEN}Network policies updated successfully{Style.RESET_ALL}")
                 except Exception as policy_error:
                     # If updating policies fails, roll back the drone movement
