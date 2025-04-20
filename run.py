@@ -22,7 +22,7 @@ parser.add_argument('--max_hop_count', type=int, default=25, help='Maximum numbe
 parser.add_argument('--max_seq_count', type=int, default=50, help='Maximum number of sequence numbers we can store')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')
 parser.add_argument('--grid_size', type=int, default=12, help='Defines nxn sized grid.')
-parser.add_argument('--grid_type', choices=['random', 'large_hop', 'multi_swarm', 'large_hop_extended'], default='large_hop',
+parser.add_argument('--grid_type', choices=['random', 'multi_swarm', 'large_hop_extended'], default='large_hop_extended',
                     help='Choose between random, large hop grid, multi-swarm, or large hop extended (21 hops) topology')
 parser.add_argument('--log_level', choices=['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL', 'TRACE'], default='DEBUG', help='Set the log level for the drone')
 parser.add_argument('--simulation_level', choices=['kube', 'pi'], default='kube', help='Set the simulation level')
@@ -211,7 +211,18 @@ def get_neighbors(matrix, i, j):
 
     return neighbors
 
+
+
 def create_network_policies(matrix):
+    """Generate Kubernetes NetworkPolicy resources for drone communication.
+    
+    This function creates network policies for each drone in the matrix, defining:
+    1. Ingress rules - allowing traffic from GCS and neighboring drones
+    2. Egress rules - allowing traffic to GCS and neighboring drones
+    
+    Note: After generation, the policies are fixed to ensure no incorrect 'from' fields
+    appear in egress rules (Kubernetes only allows 'to' in egress).
+    """
     policies = []
 
     # Get leader drones for special handling in multi-swarm mode
@@ -252,6 +263,7 @@ spec:
       tier: drone
   policyTypes:
   - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
@@ -279,26 +291,43 @@ spec:
     - protocol: TCP
       port: 60137"""
 
+                policy = base_policy
+
                 if neighbors:
-                    # Add neighbor connections if drone has neighbors
-                    policy = base_policy + f"""
+                    # Add neighbor connections (ingress) if drone has neighbors
+                    policy += f"""
   - from:
     - podSelector:
         matchExpressions:
         - key: app
           operator: In
           values: [{', '.join([f'drone{n}' for n in neighbors])}]{ports_config}"""
-                else:
-                    # Just use the base policy if no neighbors
-                    policy = base_policy
+                    
+                    # Add neighbor connections (egress) - only use 'to' for egress rules
+                    policy += f"""
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [{', '.join([f'drone{n}' for n in neighbors])}]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns"""
+                
                 policies.append(policy)
 
     with open('etc/kubernetes/deploymentNetworkPolicy.yml', 'w') as file:
         file.write("\n---\n".join(policies))
-
-    # Apply network policies using our utility function
-    run_kubectl_command("kubectl apply -f etc/kubernetes/deploymentNetworkPolicy.yml",
-                      "Applying network policies")
 
 def move_drone(matrix, drone, to_pos):
     to_i, to_j = to_pos
@@ -414,11 +443,6 @@ def verify_drone_count_matches_topology():
     # Define topology-specific configurations
     topology_configs = {
         'multi_swarm': {
-            'drone_count': 10,
-            'max_hop_count': 25,
-            'max_seq_count': 50
-        },
-        'large_hop': {
             'drone_count': 10,
             'max_hop_count': 25,
             'max_seq_count': 50
