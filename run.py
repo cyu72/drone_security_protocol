@@ -32,7 +32,7 @@ parser.add_argument('--enable_leader', type=str, default='True', help='Enable le
 parser.add_argument('--leader_drones', type=str, default='1,5',
                     help='Comma-separated list of drone IDs that should be leaders')
 parser.add_argument('--controller_addr', type=str, help='Controller address for drone connection')
-parser.add_argument('--trigger_rerr', choices=['True', 'False'], default=False, help='Allow RERRs to be triggered with route caching')
+parser.add_argument('--trigger_rerr', choices=['True', 'False'], default=False, help='Allow RERRs to be triggered within RREQ route caching')
 args = parser.parse_args()
 
 # Global variables
@@ -1000,6 +1000,13 @@ def main():
             process.terminate()
         except:
             pass
+
+    # Clean up Kubernetes resources before the program ends
+    print(f"{Fore.CYAN}Cleaning up Kubernetes resources...{Style.RESET_ALL}")
+    run_kubectl_command("kubectl delete pods --all &", "Deleting all pods")
+    run_kubectl_command("kubectl delete svc --all &", "Deleting all services")
+    run_kubectl_command("kubectl delete networkpolicies --all &", "Deleting all network policies")
+    print(f"{Fore.GREEN}Cleanup completed.{Style.RESET_ALL}")
 
 if __name__ == "__main__":
     main()

@@ -86,6 +86,8 @@ struct RERR : public MESSAGE {
     std::vector<string> dst_list;
     std::vector<string> auth_list;
     std::string retAddr; // Temp
+    std::string srcAddr; // Source address of the node sending the RERR
+    std::string recvAddr;
 
     RERR() {
         this->type = ROUTE_ERROR;
@@ -121,6 +123,11 @@ struct RERR : public MESSAGE {
     void addRetAddr(const string& addr){
         this->retAddr = addr;
     }
+    
+    void setSrcAddr(const string& addr){
+        this->srcAddr = addr;
+        this->recvAddr = addr;
+    }
 
     void create_rerr_prime(const string& nonce, const string& dst, const string& auth) {
         this->type = ROUTE_ERROR;
@@ -131,13 +138,16 @@ struct RERR : public MESSAGE {
     }
 
     string serialize() const {
-        json j = json::object();
-        j["auth_list"] = this->auth_list;
-        j["dst_list"] = this->dst_list;
-        j["nonce_list"] = this->nonce_list;
-        j["retAddr"] = this->retAddr;
-        j["tsla_list"] = this->tsla_list;
-        j["type"] = this->type;
+        json j = json{
+            {"type", this->type},
+            {"retAddr", this->retAddr},
+            {"srcAddr", this->srcAddr},
+            {"nonce_list", this->nonce_list},
+            {"tsla_list", this->tsla_list},
+            {"dst_list", this->dst_list},
+            {"auth_list", this->auth_list},
+            {"recvAddr", this->recvAddr}
+        };
         return j.dump();
     }
 
@@ -148,6 +158,8 @@ struct RERR : public MESSAGE {
         this->dst_list = j["dst_list"].get<std::vector<string>>();
         this->auth_list = j["auth_list"].get<std::vector<string>>();
         this->retAddr = j["retAddr"];
+        this->srcAddr = j.contains("srcAddr") ? j["srcAddr"].get<std::string>() : "";
+        this->recvAddr = j.contains("recvAddr") ? j["recvAddr"].get<std::string>() : "";
     }
 };
 

@@ -415,6 +415,7 @@ void drone::dataHandler(json& data){
                 TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
                 rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
                 rerr.addRetAddr(msg.srcAddr);
+                rerr.setSrcAddr(this->addr); // Set source address to current node
 
                 sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
             }
@@ -677,6 +678,7 @@ void drone::routeErrorHandler(json& data){
     HERR currHERR = this->tesla.routingTable[msg.dst_list[0]].getMostRecentHERR();
     RERR rerr_prime; string nonce = msg.nonce_list[0]; string tsla_key = msg.tsla_list[0]; // TODO: Replace hardcoded zero indexed references
     rerr_prime.create_rerr_prime(nonce, msg.dst_list[0], msg.auth_list[0]);
+    rerr_prime.setSrcAddr(this->addr); // Set source address to current node
 
     logger->trace("currHERR.hash = {}", currHERR.hRERR, "currHERR.mac = {}", currHERR.mac_t);
     logger->trace("rerr_prime.nonce = {}, rerr_prime.dst = {}, rerr_prime.auth = {}", 
@@ -686,11 +688,12 @@ void drone::routeErrorHandler(json& data){
     logger->trace("tsla_key = {}", tsla_key);
 
     if (currHERR.verify(rerr_prime, tsla_key)) {
-        logger->debug("Successful Tesla Verification");
+        logger->info("Successful Tesla Verification");
 
         try {
             TESLA::nonce_data data = this->tesla.getNonceData(msg.retAddr);
             msg.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+            msg.setSrcAddr(this->addr); // Set source address to current node
             sendData(this->tesla.routingTable.get(msg.retAddr)->intermediateAddr, msg.serialize());
             
             std::lock_guard<std::mutex> rtLock(routingTableMutex); // remove entry from routing table
@@ -767,6 +770,7 @@ void drone::initRouteDiscovery(const string& destAddr){
     RERR rerr_prime;
     string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
     rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+    rerr_prime.setSrcAddr(this->addr); // Set source address to current node
     msg->herr = HERR::create(rerr_prime, tsla_hash);
 
     this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
@@ -1318,12 +1322,21 @@ void drone::routeRequestHandler(json& data){
                         logger->info("Failed to send to intermediateAddr. Broadcasting RREQ.");
                         udpInterface.broadcast(buf);
                         // generate RERR
+                        RERR rerr;
+                        // Attach information here for RERR
+                        TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
+                        rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+                        rerr.addRetAddr(msg.srcAddr);
+                        rerr.setSrcAddr(this->addr);
+        
+                        /*Todo: Remove from table*/
+                        sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
+                        udpInterface.broadcast(buf);
                     }
                 } else {
-                    logger->info("No route to destAddr found. Broadcasting RREQ.");
+                    logger->info("Trigger RERR disabled or No route to destAddr found. Broadcasting RREQ.");
                     udpInterface.broadcast(buf);
                 }
-                udpInterface.broadcast(buf);
             } catch (const std::exception& e) {
                 logger->error("Exception while forwarding RREQ: {}", e.what());
                 return;
