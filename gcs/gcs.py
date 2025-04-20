@@ -22,7 +22,7 @@ class GCS:
         self.crypto_utils = CryptoUtils()
         self.app = Flask(__name__)
         self.cert_validity_minutes = int(os.getenv('CERT_VALIDITY_MINUTES', '59'))
-        self.skip_verification = os.getenv('SKIP_VERIFICATION', 'false').lower() == 'true'
+        self.skip_verification = os.getenv('SKIP_VERIFICATION', 'false').lower() == 'true' # Skips hardware verification for each node
         self.setup_routes()
         self.private_key, self.public_key = self.crypto_utils.generate_key_pair()
         self._ensure_pki_infrastructure()
@@ -30,6 +30,8 @@ class GCS:
         self.allowed_devices = set()
         self.load_allowed_devices('allowed_devices.json')
         self._start_bootstrap_phase()
+        self.issued_certificates = {}
+        self.leader_drones = set() # Note: No included implementation for updating a leader note
 
     def _start_bootstrap_phase(self):
         """Start the bootstrap phase for certificate enrollment"""
@@ -60,49 +62,119 @@ class GCS:
                 cert = self.generate_certificate(csr, serial_number, eeprom_id)
                 return jsonify({'status': 'success', 'certificate': self.format_certificate_response(cert, serial_number, eeprom_id)}), 200
                     
-            except Exception as e:
-                return jsonify({'status': 'error', 'message': str(e)}), 500
+                except Exception as e:
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                        
+            @self.app.route('/get_network_nodes', methods=['POST'])
+            def get_network_nodes():
+                try:
+                    data = request.get_json()
+                    requesting_drone_id = data.get('drone_id')
+                    auth_token = data.get('auth_token')  # This could be signed with the drone's private key
+                    
+                    # Verify the drone is a leader
+                    if not self.is_leader_drone(requesting_drone_id, auth_token):
+                        return jsonify({'status': 'error', 'message': 'Unauthorized - not a leader drone'}), 403
+                    
+                    # Return the list of nodes and their certificates
+                    return jsonify({
+                        'status': 'success',
+                        'nodes': self.get_network_node_list()
+                    }), 200
+                    
+                except Exception as e:
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                
+            @self.app.route('/check_crl/<certificate>', methods=['GET'])
+            def check_certificate_revocation(certificate):
+                try:
+                    self.logger.info(f"Received CRL check request for certificate: {certificate[:15]}...")
+                    
+                    # Validate the certificate parameter
+                    if not certificate:
+                        return jsonify({'status': 'error', 'message': 'Certificate parameter is required'}), 400
+                    
+                    # Check if the certificate is revoked using the CRL manager
+                    is_revoked = self.crl_manager.is_cert_revoked(certificate)
+                    
+                    # Log the result
+                    self.logger.info(f"Certificate {certificate[:15]}... is {'revoked' if is_revoked else 'valid'}")
+                    
+                    # Return the result
+                    return jsonify({
+                        'status': 'success',
+                        'certificate': certificate[:15] + "...",  # Return truncated certificate for logs
+                        'revoked': is_revoked,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }), 200
+                    
+                except Exception as e:
+                    self.logger.error(f"Error checking certificate revocation: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                    
+            @self.app.route('/bulk_check_crl', methods=['POST'])
+            def bulk_check_certificate_revocation():
+                try:
+                    # Get the list of certificates from the request
+                    data = request.get_json()
+                    if not data or not isinstance(data, dict) or 'certificates' not in data:
+                        return jsonify({'status': 'error', 'message': 'Invalid request format. Expected JSON with "certificates" array'}), 400
+                    
+                    certificates = data.get('certificates', [])
+                    if not certificates or not isinstance(certificates, list):
+                        return jsonify({'status': 'error', 'message': 'Invalid or empty certificates list'}), 400
+                    
+                    self.logger.info(f"Received bulk CRL check request for {len(certificates)} certificates")
+                    
+                    # Check each certificate
+                    results = {}
+                    for cert in certificates:
+                        results[cert] = self.crl_manager.is_cert_revoked(cert)
+                    
+                    # Return the results
+                    return jsonify({
+                        'status': 'success',
+                        'results': results,
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'crl_last_update': self.crl_manager.last_update.isoformat()
+                    }), 200
+                
+                except Exception as e:
+                    self.logger.error(f"Error performing bulk CRL check: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                    
+            @self.app.route('/crl_status', methods=['GET'])
+            def get_crl_status():
+                try:
+                    # Get CRL status information
+                    status = self.crl_manager.get_crl_status()
+                    
+                    # Add additional information for the response
+                    status['total_issued_certificates'] = len(self.issued_certificates)
+                    status['revocation_percentage'] = (
+                        (status['revoked_count'] / status['total_issued_certificates'] * 100)
+                        if status['total_issued_certificates'] > 0 else 0
+                    )
+                    
+                    # Return the status
+                    return jsonify({
+                        'status': 'success',
+                        'crl_info': status
+                    }), 200
+                
+                except Exception as e:
+                    self.logger.error(f"Error retrieving CRL status: {str(e)}")
+                    return jsonify({'status': 'error', 'message': str(e)}), 500
+                
+    def is_leader_drone(self, drone_id: str, auth_token: str) -> bool:
+        """Verify if the requesting drone is a leader"""
+        # For basic implementation, just check if the drone ID is in our leader set
+        # In a more secure implementation, validate the auth_token cryptographically
+        return drone_id in self.leader_drones
 
-    def verify_device_identity(self, serial_number: str, eeprom_id: str) -> bool:
-        """Verify the device's identity against allowed devices"""
-        return (serial_number, eeprom_id) in self.allowed_devices
-
-    def format_certificate_response(self, cert: x509.Certificate, serial_number: str, eeprom_id: str) -> Dict[str, Any]:
-        key_usage = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value
-        return {
-            'certificate_data': {
-                'pem': cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
-                'serial_number': str(cert.serial_number),
-                'public_key': cert.public_key().public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo
-                ).decode('utf-8'),
-                'ca_public_key': self.ca_cert.public_bytes(
-                    encoding=serialization.Encoding.PEM
-                ).decode('utf-8')
-            },
-            'validity': {
-                'not_before': cert.not_valid_before_utc.isoformat(),
-                'not_after': cert.not_valid_after_utc.isoformat()
-            },
-            'subject': {
-                'serial_number': serial_number,
-                'eeprom_id': eeprom_id,
-                'common_name': self._get_name_attribute(cert.subject, NameOID.COMMON_NAME)
-            },
-            'issuer': {
-                'common_name': self._get_name_attribute(cert.issuer, NameOID.COMMON_NAME),
-                'organization': self._get_name_attribute(cert.issuer, NameOID.ORGANIZATION_NAME)
-            },
-            'key_usage': {
-                'digital_signature': key_usage.digital_signature,
-                'key_encipherment': key_usage.key_encipherment
-            },
-            'metadata': {
-                'issued_at': datetime.now(timezone.utc).isoformat(),
-                'version': cert.version.name
-            }
-        }
+    def get_network_node_list(self) -> dict:
+        """Get the list of all nodes and their certificates"""
+        return self.issued_certificates
 
     def _get_name_attribute(self, name: x509.Name, oid: NameOID) -> Optional[str]:
         """Safely extract name attribute from certificate subject/issuer"""
@@ -256,6 +328,10 @@ class GCS:
                 'version': cert.version.name
             }
         }
+    
+    def register_leader(self, drone_id: str):
+        self.leader_drones.add(drone_id)
+        self.logger.info(f"Registered {drone_id} as a leader drone")
 
     def generate_certificate(self, csr: x509.CertificateSigningRequest, drone_id: str, manufacturer_id: str) -> x509.Certificate:
         builder = x509.CertificateBuilder()
@@ -275,22 +351,23 @@ class GCS:
                 crl_sign=False, encipher_only=False,
                 decipher_only=False
             ), critical=True)
-        return builder.sign(private_key=self.ca_private_key, algorithm=hashes.SHA256())
-    
-    def load_allowed_devices(self, filepath: str) -> None:
-        """Load allowed devices from a JSON file containing serial numbers and EEPROM IDs"""
-        try:
-            with open(filepath, 'r') as f:
-                devices = json.load(f)
-                self.allowed_devices = {(d['serial_number'], d['eeprom_id']) for d in devices}
-                
-            self.logger.info(f"Successfully loaded {len(self.allowed_devices)} devices:")
-            for serial_number, eeprom_id in self.allowed_devices:
-                self.logger.info(f"Device: Serial Number = {serial_number}, EEPROM ID = {eeprom_id}")
-                
-        except (FileNotFoundError, json.JSONDecodeError) as e:
-            self.logger.error(f"Failed to load allowed devices: {str(e)}")
-            self.allowed_devices = set()
+        cert = builder.sign(private_key=self.ca_private_key, algorithm=hashes.SHA256())
+        cert_data = {
+            'certificate': cert.public_bytes(serialization.Encoding.PEM).decode('utf-8'),
+            'drone_id': drone_id,
+            'manufacturer_id': manufacturer_id,
+            'issued_at': datetime.now(timezone.utc).isoformat(),
+            'valid_until': (now + timedelta(minutes=self.cert_validity_minutes)).isoformat()
+        }
+        self.issued_certificates[drone_id] = cert_data
+        
+        # Check if the drone should be a leader
+        if os.getenv('LEADER_DRONES', '').split(','):
+            leader_ids = [id.strip() for id in os.getenv('LEADER_DRONES', '').split(',')]
+            if drone_id in leader_ids:
+                self.register_leader(drone_id)
+        
+        return cert
 
     def run(self, host='0.0.0.0', port=5000):
         self.app.run(host=host, port=port)

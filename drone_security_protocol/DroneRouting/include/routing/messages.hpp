@@ -36,11 +36,13 @@ enum MESSAGE_TYPE {
     DATA,
     CERTIFICATE_VALIDATION,
     LEAVE_NOTIFICATION,
-    INIT_ROUTE_DISCOVERY, // Everything below here is not apart of the actual protocol
+    INIT_ROUTE_DISCOVERY,
     VERIFY_ROUTE,
     HELLO, // Broadcast Msg
     INIT_LEAVE,
-    EXIT
+    EXIT,
+    JOIN_REQUEST,
+    JOIN_RESPONSE
 };
 
 struct MESSAGE {
@@ -83,6 +85,8 @@ struct RERR : public MESSAGE {
     std::vector<string> dst_list;
     std::vector<string> auth_list;
     std::string retAddr; // Temp
+    std::string srcAddr; // Source address of the node sending the RERR
+    std::string recvAddr;
 
     RERR() {
         this->type = ROUTE_ERROR;
@@ -118,6 +122,11 @@ struct RERR : public MESSAGE {
     void addRetAddr(const string& addr){
         this->retAddr = addr;
     }
+    
+    void setSrcAddr(const string& addr){
+        this->srcAddr = addr;
+        this->recvAddr = addr;
+    }
 
     void create_rerr_prime(const string& nonce, const string& dst, const string& auth) {
         this->type = ROUTE_ERROR;
@@ -128,13 +137,16 @@ struct RERR : public MESSAGE {
     }
 
     string serialize() const {
-        json j = json::object();
-        j["auth_list"] = this->auth_list;
-        j["dst_list"] = this->dst_list;
-        j["nonce_list"] = this->nonce_list;
-        j["retAddr"] = this->retAddr;
-        j["tsla_list"] = this->tsla_list;
-        j["type"] = this->type;
+        json j = json{
+            {"type", this->type},
+            {"retAddr", this->retAddr},
+            {"srcAddr", this->srcAddr},
+            {"nonce_list", this->nonce_list},
+            {"tsla_list", this->tsla_list},
+            {"dst_list", this->dst_list},
+            {"auth_list", this->auth_list},
+            {"recvAddr", this->recvAddr}
+        };
         return j.dump();
     }
 
@@ -145,6 +157,8 @@ struct RERR : public MESSAGE {
         this->dst_list = j["dst_list"].get<std::vector<string>>();
         this->auth_list = j["auth_list"].get<std::vector<string>>();
         this->retAddr = j["retAddr"];
+        this->srcAddr = j.contains("srcAddr") ? j["srcAddr"].get<std::string>() : "";
+        this->recvAddr = j.contains("recvAddr") ? j["recvAddr"].get<std::string>() : "";
     }
 };
 
@@ -235,6 +249,9 @@ struct RREQ : public MESSAGE {
     unsigned long hopCount;
     HERR herr;
     int ttl; // Max number of hops allowed for RREQ to propagate through network
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this request
+    string leaderSignature; // Cryptographic signature for leader verification
 
     RREQ() {
         this->type = ROUTE_REQUEST;
@@ -244,12 +261,16 @@ struct RREQ : public MESSAGE {
         this->hopCount = 0;
         this->rootHash = "";
         this->ttl = 0;
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
     RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, 
-         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash) {
+         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash,
+         bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
         this->type = ROUTE_REQUEST;
-        this->srcAddr = srcAddr;
+        this->srcAddr = srcAddr; // address of origin
         this->recvAddr = interAddr;
         this->destAddr = destAddr;
         this->srcSeqNum = srcSeqNum;
@@ -260,6 +281,9 @@ struct RREQ : public MESSAGE {
         this->hashTree = hashTree;
         this->ttl = ttl;
         this->rootHash = rootHash;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -275,7 +299,10 @@ struct RREQ : public MESSAGE {
             {"hashTree", this->hashTree},
             {"ttl", this->ttl},
             {"rootHash", this->rootHash},
-            {"herr", this->herr.to_json()}
+            {"herr", this->herr.to_json()},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
 
         return j.dump();
@@ -294,6 +321,11 @@ struct RREQ : public MESSAGE {
         this->ttl = j["ttl"];
         this->rootHash = j["rootHash"];
         this->herr = HERR::from_json(j["herr"]);
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 };
 
@@ -307,6 +339,9 @@ struct RREP : public MESSAGE {
     unsigned long hopCount;
     HERR herr;
     int ttl;
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this reply
+    string leaderSignature; // Cryptographic signature for leader verification
 
     RREP() {
         this->type = ROUTE_REPLY;
@@ -315,9 +350,14 @@ struct RREP : public MESSAGE {
         this->hash = "";
         this->hopCount = 0;
         this->ttl = 0;
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, unsigned long hopCount, HERR herr, int ttl) {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, 
+         unsigned long hopCount, HERR herr, int ttl, bool isCrossSwarm = false, 
+         string forwardingLeader = "", string leaderSignature = "") {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -327,6 +367,9 @@ struct RREP : public MESSAGE {
         this->hopCount = hopCount;
         this->herr = herr;
         this->ttl = ttl;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -339,8 +382,11 @@ struct RREP : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"herr", this->herr.to_json()}, // FOR DEBUG PURPOSES ONLY
-            {"ttl", this->ttl}
+            {"herr", this->herr.to_json()},
+            {"ttl", this->ttl},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
         return j.dump();
     }
@@ -354,8 +400,13 @@ struct RREP : public MESSAGE {
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->herr = HERR::from_json(j["herr"]); // FOR DEBUG PURPOSES ONLY
+        this->herr = HERR::from_json(j["herr"]);
         this->ttl = j["ttl"];
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 
 };
@@ -363,12 +414,14 @@ struct RREP : public MESSAGE {
 struct INIT_MESSAGE : public MESSAGE {
     enum INIT_MODE {
         AUTH,
-        TESLA
+        TESLA,
+        LEADER
     };
     INIT_MODE mode;
     string hash;
     string srcAddr;
     int disclosure_time;
+    bool is_leader;
 
     INIT_MESSAGE() {
         this->type = HELLO;
@@ -390,12 +443,19 @@ struct INIT_MESSAGE : public MESSAGE {
         this->mode = TESLA;
     }
 
+    void set_leader_init(string srcAddr, bool leader_status) {
+        this->srcAddr = srcAddr;
+        this->is_leader = leader_status;
+        this->mode = LEADER;
+    }
+
     string serialize() const override {
         json j = json{
             {"type", this->type},
             {"hash", this->hash},
             {"srcAddr", this->srcAddr},
-            {"mode", this->mode}
+            {"mode", this->mode},
+            {"is_leader", this->is_leader}
         };
 
         if (this->mode == TESLA) {
@@ -410,11 +470,17 @@ struct INIT_MESSAGE : public MESSAGE {
         this->hash = j["hash"];
         this->srcAddr = j["srcAddr"];
         this->mode = j["mode"];
+        
+        // Add deserialization for is_leader field
+        if (j.contains("is_leader")) {
+            this->is_leader = j["is_leader"];
+        } else {
+            this->is_leader = false;
+        }
         if (this->mode == TESLA) {
             this->disclosure_time = j["disclosure_time"];
         }
     }
-    
 };
 
 struct DATA_MESSAGE : public MESSAGE {
@@ -422,20 +488,30 @@ struct DATA_MESSAGE : public MESSAGE {
     string destAddr;
     string srcAddr;
     string data;
+    bool isCrossSwarm; // Flag to indicate cross-swarm communication
+    string forwardingLeader; // Leader address that is forwarding this message
+    string leaderSignature; // Cryptographic signature for leader verification
 
     DATA_MESSAGE() {
         isBroadcast = false;
         this->type = DATA;
         this->destAddr = "";
         this->data = "";
+        this->isCrossSwarm = false;
+        this->forwardingLeader = "";
+        this->leaderSignature = "";
     }
 
-    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false) {
+    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false, 
+                bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
         this->isBroadcast = isBroadcast;
         this->type = DATA;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
         this->data = data;
+        this->isCrossSwarm = isCrossSwarm;
+        this->forwardingLeader = forwardingLeader;
+        this->leaderSignature = leaderSignature;
     }
 
     string serialize() const override {
@@ -444,7 +520,10 @@ struct DATA_MESSAGE : public MESSAGE {
             {"isBroadcast", this->isBroadcast},
             {"srcAddr", this->srcAddr},
             {"destAddr", this->destAddr},
-            {"data", this->data}
+            {"data", this->data},
+            {"isCrossSwarm", this->isCrossSwarm},
+            {"forwardingLeader", this->forwardingLeader},
+            {"leaderSignature", this->leaderSignature}
         };
         return j.dump();
     }
@@ -455,6 +534,11 @@ struct DATA_MESSAGE : public MESSAGE {
         this->destAddr = j["destAddr"];
         this->srcAddr = j["srcAddr"];
         this->data = j["data"];
+        
+        // Cross-swarm fields (with backward compatibility for older messages)
+        this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
+        this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
+        this->leaderSignature = j.contains("leaderSignature") ? j["leaderSignature"].get<std::string>() : "";
     }
 };
 
@@ -543,7 +627,7 @@ struct ChallengeResponse : public ChallengeMessage {
                 std::string cleaned_input = encoded;
                 cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
                     [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
-                
+
                 switch (cleaned_input.length() % 4) {
                     case 2: cleaned_input += "=="; break;
                     case 3: cleaned_input += "="; break;
@@ -755,4 +839,58 @@ struct LeaveMessage : public MESSAGE {
     }
 };
 
+struct JoinRequestMessage : public MESSAGE {
+    std::string srcAddr;
+    std::chrono::system_clock::time_point timestamp;
+    
+    JoinRequestMessage() {
+        this->type = JOIN_REQUEST;
+    }
+    
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"srcAddr", this->srcAddr},
+            {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                timestamp.time_since_epoch()).count()}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->srcAddr = j["srcAddr"];
+        this->timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
+    }
+};
+
+struct JoinResponseMessage : public MESSAGE {
+    std::string srcAddr;
+    std::vector<std::string> validNodeList;
+    std::chrono::system_clock::time_point timestamp;
+    
+    JoinResponseMessage() {
+        this->type = JOIN_RESPONSE;
+    }
+    
+    string serialize() const override {
+        json j = json{
+            {"type", this->type},
+            {"srcAddr", this->srcAddr},
+            {"validNodeList", this->validNodeList},
+            {"timestamp", std::chrono::duration_cast<std::chrono::milliseconds>(
+                timestamp.time_since_epoch()).count()}
+        };
+        return j.dump();
+    }
+
+    void deserialize(json& j) override {
+        this->type = j["type"];
+        this->srcAddr = j["srcAddr"];
+        this->validNodeList = j["validNodeList"].get<std::vector<std::string>>();
+        this->timestamp = std::chrono::system_clock::time_point(
+            std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
+    }
+};
 #endif
