@@ -42,8 +42,7 @@ enum MESSAGE_TYPE {
     INIT_LEAVE,
     EXIT,
     JOIN_REQUEST,
-    JOIN_RESPONSE,
-
+    JOIN_RESPONSE
 };
 
 struct MESSAGE {
@@ -478,7 +477,6 @@ struct INIT_MESSAGE : public MESSAGE {
         } else {
             this->is_leader = false;
         }
-        
         if (this->mode == TESLA) {
             this->disclosure_time = j["disclosure_time"];
         }
@@ -629,6 +627,7 @@ struct ChallengeResponse : public ChallengeMessage {
                 std::string cleaned_input = encoded;
                 cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
                     [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
+
                 switch (cleaned_input.length() % 4) {
                     case 2: cleaned_input += "=="; break;
                     case 3: cleaned_input += "="; break;
@@ -894,5 +893,4 @@ struct JoinResponseMessage : public MESSAGE {
             std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
     }
 };
-
 #endif

@@ -1,10 +1,10 @@
 #include <routing/pki_client.hpp>
 
-PKIClient::PKIClient(std::string_view drone_id, 
-                    std::string_view manufacturer_id,
+PKIClient::PKIClient(std::string_view serial, 
+                    std::string_view eeprom_id,
                     CertStatusCallback status_callback)
-    : drone_id_(drone_id)
-    , manufacturer_id_(manufacturer_id)
+    : serial_(serial)
+    , eeprom_id_(eeprom_id)
     , has_valid_cert_(false)
     , key_(EVP_PKEY_new(), EVP_PKEY_free)
     , md_ctx_(EVP_MD_CTX_new(), EVP_MD_CTX_free)
@@ -40,7 +40,7 @@ bool PKIClient::requestCertificate() {
         // Create and configure CSR
         auto csr = std::unique_ptr<X509_REQ, decltype(&X509_REQ_free)>(X509_REQ_new(), X509_REQ_free);
         auto name = std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)>(X509_NAME_new(), X509_NAME_free);
-        X509_NAME_add_entry_by_txt(name.get(), "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(drone_id_.c_str()), -1, -1, 0);
+        X509_NAME_add_entry_by_txt(name.get(), "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(serial_.c_str()), -1, -1, 0);
         X509_REQ_set_subject_name(csr.get(), name.get());
         X509_REQ_set_pubkey(csr.get(), key_.get());
         X509_REQ_sign(csr.get(), key_.get(), EVP_sha256());
@@ -59,8 +59,8 @@ bool PKIClient::requestCertificate() {
         
         auto res = client.Post("/request_certificate", 
             nlohmann::json({
-                {"drone_id", drone_id_},
-                {"manufacturer_id", manufacturer_id_},
+                {"serial_number", serial_},
+                {"eeprom_id", eeprom_id_},
                 {"csr", std::string(pem_data, pem_len)}
             }).dump(), 
             "application/json"
@@ -97,16 +97,16 @@ bool PKIClient::requestCertificate() {
     }
 }
 
-void PKIClient::storePendingChallenge(const std::string& drone_id, 
+void PKIClient::storePendingChallenge(const std::string& serial, 
                                     const std::vector<uint8_t>& challenge) {
     std::lock_guard<std::mutex> lock(challenge_mutex);
-    pending_challenges[drone_id] = challenge;
+    pending_challenges[serial] = challenge;
     
     // Schedule cleanup after timeout
-    std::thread([this, drone_id]() {
+    std::thread([this, serial]() {
         std::this_thread::sleep_for(std::chrono::seconds(30));
         std::lock_guard<std::mutex> lock(challenge_mutex);
-        pending_challenges.erase(drone_id);
+        pending_challenges.erase(serial);
     }).detach();
 }
 

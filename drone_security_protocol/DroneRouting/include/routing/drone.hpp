@@ -32,6 +32,7 @@
 #include <ctime>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/fmt/chrono.h>
 #include <atomic>
 #include <condition_variable>
 #include <future>
@@ -44,7 +45,7 @@
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "pki_client.hpp"
-#include "network_adapters/kube_udp_interface.hpp"
+#include "network_adapters/ad_hoc_udp_interface.hpp"
 #include "network_adapters/tcp_interface.hpp"
 
 using json = nlohmann::json;
@@ -232,7 +233,6 @@ class drone {
         std::deque<string> hashChainCache; 
 
         int sendData(string containerName, const string& msg);
-        void sendDataUDP(const string&, const string&);
         string sha256(const string& inn);
         void initMessageHandler(json& data);
         void routeRequestHandler(json& data);
@@ -306,6 +306,9 @@ class drone {
         bool isValidSwarmNode(const std::string& addr);
         void propagateValidNodeListAfterJoin(const std::string& requestAddr);
         void transitionToJoinPhase();
+        void challengeResponseHandler(json& data);
+
+        void handleIPCMessage(const std::string&);
 };
 
 #endif

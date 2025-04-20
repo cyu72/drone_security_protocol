@@ -1,14 +1,13 @@
-import socket
-import threading
 import logging
 import os
 from pathlib import Path
 from messages import MESSAGE_TYPE, GCS_MESSAGE, RREQ, RREP
 from gcs import GCS
+import sys
 
-# Constants
-PORT_NUMBER = 80
+PORT_NUMBER = 65456
 BRDCST_PORT = 65467
+ADHOC_IFACE = "wlan0"
 FLASK_PORT = int(os.getenv('FLASK_PORT', '5000'))
 FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
 
@@ -165,15 +164,26 @@ class GCS_SERVER:
             self.logger.info("Server stopped")
 
 def main():
-    server = GCS_SERVER()
+    ADHOC_IP = "192.168.1.99"
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    logger = logging.getLogger('PKI_SERVER')
+    
     try:
-        server.start()
+        gcs = GCS(base_dir="certs")
+        logger.info("PKI server initialized")
+        
+        logger.info("Starting PKI server...")
+        gcs.run(host='0.0.0.0', port=5000)
+        
     except KeyboardInterrupt:
-        server.logger.info("Shutting down server...")
-        server.stop()
+        logger.info("Shutting down PKI server...")
+        sys.exit(0)
     except Exception as e:
-        server.logger.error(f"Fatal error: {str(e)}")
-        server.stop()
+        logger.error(f"Fatal error: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

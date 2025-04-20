@@ -102,7 +102,7 @@ void runTerminal() {
                 std::cerr << "Error: " << e.what() << std::endl;
             }
         }
-
+      
         if (autoDiscoverThread) {
             running = false;
             autoDiscoverThread->join();

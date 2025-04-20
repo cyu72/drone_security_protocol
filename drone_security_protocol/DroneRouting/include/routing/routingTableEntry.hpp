@@ -47,6 +47,14 @@ struct ROUTING_TABLE_ENTRY {
         this->targetLeader = "";
     }
 
+    ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl){
+        this->destAddr = destAddr;
+        this->intermediateAddr = intermediateAddr;
+        this->seqNum = seqNum;
+        this->cost = cost;
+        this->ttl = ttl;
+    }
+  
     ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash){
         this->destAddr = destAddr;
         this->intermediateAddr = intermediateAddr;

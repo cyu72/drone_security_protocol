@@ -3,10 +3,11 @@
 drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(port) {
     logger = createLogger(fmt::format("drone_{}", nodeID));
 
-    this->addr = "drone" + std::to_string(nodeID) + "-service.default";
+    this->addr = std::getenv("NODE_IP") ? std::string(std::getenv("NODE_IP")) : throw std::runtime_error("NODE_IP not set");
     this->port = port;
     this->nodeID = nodeID;
     this->seqNum = 1;
+
     this->GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : "gcs-service.default";
     
     // Initialize the CRL cache as empty
@@ -35,8 +36,8 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     }
 
     pki_client = std::make_unique<PKIClient>(
-        this->addr,
-        "manufacturer_1",  // TODO: Replace with actual manufacturer ID or other identifying information
+        std::string(std::getenv("SN")),
+        std::string(std::getenv("EEPROM_ID")),
         [this](bool success) {
             logger->info("Certificate status update: {}", success ? "valid" : "invalid");
         }
@@ -458,6 +459,15 @@ void drone::handleIPCMessage(const std::string& message) {
         // Add minimal required fields if they don't exist
         if (!jsonData.contains("srcAddr")) {
             jsonData["srcAddr"] = "ipc_client";
+
+        if (sendData(this->tesla.routingTable.get(msg.destAddr)->intermediateAddr, msg.serialize()) != 0){
+            RERR rerr;
+            // Attach information here for RERR
+            TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
+            rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+            rerr.addRetAddr(msg.srcAddr);
+
+            sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
         }
         
         std::lock_guard<std::mutex> lock(queueMutex);
@@ -473,6 +483,12 @@ void drone::handleIPCMessage(const std::string& message) {
     } catch (const std::exception& e) {
         logger->error("Failed to process IPC message: {}", e.what());
     }
+}
+
+void drone::handleIPCMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(queueMutex);
+    messageQueue.push(message);
+    cv.notify_one();
 }
 
 void drone::broadcast(const std::string& msg) {
@@ -698,7 +714,6 @@ void drone::routeErrorHandler(json& data){
             
             std::lock_guard<std::mutex> rtLock(routingTableMutex); // remove entry from routing table
             this->tesla.routingTable.remove(msg.retAddr);
-
         } catch (std::runtime_error& e) {
             logger->debug("End of backpropagation reached.");
         }
@@ -756,6 +771,13 @@ void drone::initRouteDiscovery(const string& destAddr){
     }();
 
     msg->hopCount = 1;
+    try {
+        msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
+    } catch (const std::out_of_range& e) {
+        logger->error("Hash chain access error: {}", e.what());
+        return;
+    }
+    msg->hopCount = 1; // 1 = broadcast range
     try {
         msg->hash = (msg->srcSeqNum == 1) ? getHashFromChain(1, 1) : getHashFromChain(msg->srcSeqNum, 1);
     } catch (const std::out_of_range& e) {
@@ -1143,7 +1165,7 @@ void drone::routeRequestHandler(json& data){
             string hashRes = msg.hash;
             int hashIterations = (this->max_hop_count * (msg.srcSeqNum > 0 ? msg.srcSeqNum - 1 : 0)) + msg.hopCount;
             
-            logger->debug("Calculating hash iterations: {}", hashIterations); // TODO: Change back to debug
+            logger->debug("Calculating hash iterations: {}", hashIterations);
             for (int i = 0; i < hashIterations; i++) {
                 hashRes = sha256(hashRes);
                 logger->debug("Hash iteration {}: {}", i, hashRes);
@@ -1165,6 +1187,11 @@ void drone::routeRequestHandler(json& data){
 
             if (msg.hopCount >= this->max_hop_count) {
                 logger->debug("Dropping RREQ: Maximum hop count reached");
+              
+            if (hashRes != this->tesla.routingTable.get(msg.recvAddr)->hash) {
+                logger->error("Hash verification failed");
+                logger->error("Expected: {}", this->tesla.routingTable.get(msg.recvAddr)->hash);
+                logger->error("Calculated: {}", hashRes);
                 return;
             }
         }
@@ -1755,7 +1782,7 @@ void drone::broadcastLeaderStatus() {
     logger->info("Broadcasting leader status: {}", serialized);
     udpInterface.broadcast(serialized);
 }
-
+  
 void drone::neighborDiscoveryHelper(){
     /* Function on another thread to repeatedly send authenticator and TESLA broadcasts */
     string msg;
@@ -2196,7 +2223,6 @@ void drone::leaveSwarm() {
     
     logger->info("Broadcasting leave notification");
     udpInterface.broadcast(leave_msg.serialize());
-
     {
         std::lock_guard<std::mutex> lock(validationMutex);
         validatedNodes.clear();
@@ -2541,7 +2567,6 @@ void drone::start() {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         
-
         if (ipc_server) {
             ipc_server->stop();
         }
