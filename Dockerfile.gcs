@@ -17,14 +17,13 @@ RUN python3 -m venv /app/venv \
 RUN mkdir -p /app/certs && chmod 755 /app/certs
 
 # Copy only the required Python files
-# Remove allowed_devices.json if it does not exist
 COPY gcs/config.py \
      gcs/crl_manager.py \
      gcs/crypto_utils.py \
      gcs/gcs.py \
      gcs/main.py \
      gcs/pki_gen.py \
-     gcs/allowed_devices.json \ 
+     gcs/allowed_devices.json \
      ./
 
 COPY gcs/certs/ ./certs/

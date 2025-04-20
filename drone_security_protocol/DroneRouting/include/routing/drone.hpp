@@ -37,10 +37,8 @@
 #include <condition_variable>
 #include <future>
 #include <set>
-#include "httplib.h"
 #include "hashTree.hpp"
 #include "messages.hpp"
-#include <spdlog/fmt/chrono.h>
 #include "ipc_server.hpp"
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
@@ -105,14 +103,6 @@ class drone {
         int send(const string&, string, bool=false);
         void broadcast(const string& msg);
         std::future<void> getSignal();
-        // Sends the current valid node list to all swarm members
-        void propagateValidNodeList();
-        // Cross-swarm communication methods
-        void initCrossSwarmRouteDiscovery(const string& destAddr);
-        void handleCrossSwarmRREQ(json& data);
-        void handleCrossSwarmRREP(json& data);
-        void broadcastToOtherLeaders(const string& serializedMsg, const string& originLeader);
-        std::vector<string> getOtherLeaderAddresses();
 
     private:
         class TESLA {
@@ -183,33 +173,11 @@ class drone {
                 std::deque<TimedHash> timed_hash_chain;
         };
         TESLA tesla;
-        struct NetworkNode {
-            std::string drone_id;
-            std::string certificate;
-            std::string manufacturer_id;
-            std::string issued_at;
-            std::string valid_until;
-        };
-        std::unordered_map<std::string, NetworkNode> networkNodes;
-        std::mutex networkNodesMutex;
-        bool requestNetworkNodes();
-        void requestNetworkNodesIfLeader();
-
-        std::vector<NetworkNode> getNetworkNodes();
-        bool isNodeInNetwork(const std::string& droneId);
-        
-        // CRL cache to avoid repeated network requests
-        std::unordered_map<std::string, bool> crlCache;
-        std::chrono::steady_clock::time_point crlCacheLastRefreshed;
-        std::mutex crlCacheMutex;
-        const std::chrono::minutes crlCacheLifetime{10}; // Cache CRL results for 10 minutes
-        void refreshCRLCache(); // Refresh the CRL cache for all known certificates
 
         string addr;
         int port;
         unsigned long seqNum;
         int nodeID;
-        string GCS_IP;
         std::queue<string> messageQueue;
         std::mutex queueMutex;
         std::condition_variable cv;
@@ -252,15 +220,12 @@ class drone {
         const uint8_t max_hop_count = std::stoul((std::getenv("MAX_HOP_COUNT"))); // Maximum number of nodes we can/allow route through
         const uint8_t max_seq_count = std::stoul((std::getenv("MAX_SEQ_COUNT")));
         const uint8_t timeout_sec = std::stoul((std::getenv("TIMEOUT_SEC")));
-        const uint8_t DISCOVERY_INTERVAL = std::stoul((std::getenv("DISCOVERY_INTERVAL")));
-        const bool trigger_rerr = std::getenv("TRIGGER_RERR") ? (std::string(std::getenv("TRIGGER_RERR")) == "True" || std::string(std::getenv("TRIGGER_RERR")) == "true") : false;
 
         UDPInterface udpInterface;
         TCPInterface tcpInterface;
         std::unique_ptr<IPCServer> ipc_server;
 
         std::chrono::steady_clock::time_point helloRecvTimer = std::chrono::steady_clock::now();
-        std::atomic<bool> discoveryPhaseActive{true};
         const unsigned int helloRecvTimeout = 5; // Acceptable time to wait for a hello message
         std::mutex helloRecvTimerMutex, routingTableMutex;
 
@@ -276,36 +241,6 @@ class drone {
         bool isValidatedSender(const std::string& sender);
         void markSenderAsValidated(const std::string& sender);
         std::vector<uint8_t> generateChallengeData(size_t length = 32);
-        bool isNodeOnCRL(const std::string& nodeAddr);
-
-        void handleIPCMessage(const std::string&);
-
-        bool isLeader = false;
-        std::string current_leader;
-        std::mutex leaderMutex;
-        void broadcastLeaderStatus();
-        bool leaderFunctionalityEnabled;
-
-        std::atomic<bool> swarmPhase{false};
-        std::vector<std::string> validNodeList;
-        std::mutex validNodeListMutex;
-        bool hasJoinedSwarm{false};
-        
-        // Track confirmed swarm members (not just validated nodes)
-        std::set<std::string> swarmMembers;
-        std::mutex swarmMembersMutex;
-        
-        // Cross-swarm communication attributes
-        std::vector<std::string> knownLeaders; // List of known leader addresses from env var
-        std::mutex knownLeadersMutex; // Mutex for thread-safe access to leader list
-        std::unordered_set<std::string> visitedLeaders; // Track visited leaders to prevent loops
-        
-        void sendJoinRequest();
-        void joinRequestHandler(json& data);
-        void joinResponseHandler(json& data);
-        bool isValidSwarmNode(const std::string& addr);
-        void propagateValidNodeListAfterJoin(const std::string& requestAddr);
-        void transitionToJoinPhase();
         void challengeResponseHandler(json& data);
 
         void handleIPCMessage(const std::string&);

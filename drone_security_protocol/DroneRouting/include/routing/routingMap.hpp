@@ -22,6 +22,7 @@ public:
         return map.find(key) != map.end();
     }
 
+    // Clean up old entries by removing entries with expired TTLs
     void cleanup() {
         auto now = std::chrono::system_clock::now();
         for (auto it = map.begin(); it != map.end(); ) {
@@ -93,4 +94,4 @@ private:
     std::unordered_map<Key, Value> map;
 };
 
-#endif
+#endif // ROUTING_MAP_HPP
