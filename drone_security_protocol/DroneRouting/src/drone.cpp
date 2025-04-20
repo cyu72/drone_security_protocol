@@ -1267,8 +1267,10 @@ void drone::routeRequestHandler(json& data){
                 msg.hopCount++;
                 msg.ttl--;
 
-                if (this->tesla.routingTable.find(msg.destAddr)) {
-                    msg.destSeqNum = this->tesla.routingTable.get(msg.destAddr)->seqNum;
+                std::string addrToDest;
+                if (auto routeEntry = this->tesla.routingTable.get(msg.destAddr)) {
+                    msg.destSeqNum = routeEntry->seqNum;
+                    addrToDest = routeEntry->intermediateAddr;
                 } else {
                     msg.destSeqNum = this->seqNum;
                 }
@@ -1309,6 +1311,18 @@ void drone::routeRequestHandler(json& data){
                 string buf = msg.serialize();
                 bytes_sent += buf.size();
                 logger->debug("Broadcasting updated RREQ");
+
+                // Try to send through intermediate addr on routing table before broadcasting:
+                if (trigger_rerr && !addrToDest.empty()) {
+                    if (sendData(addrToDest, buf) != 0) {
+                        logger->info("Failed to send to intermediateAddr. Broadcasting RREQ.");
+                        udpInterface.broadcast(buf);
+                        // generate RERR
+                    }
+                } else {
+                    logger->info("No route to destAddr found. Broadcasting RREQ.");
+                    udpInterface.broadcast(buf);
+                }
                 udpInterface.broadcast(buf);
             } catch (const std::exception& e) {
                 logger->error("Exception while forwarding RREQ: {}", e.what());

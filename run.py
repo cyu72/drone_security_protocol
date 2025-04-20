@@ -32,6 +32,7 @@ parser.add_argument('--enable_leader', type=str, default='True', help='Enable le
 parser.add_argument('--leader_drones', type=str, default='1,5',
                     help='Comma-separated list of drone IDs that should be leaders')
 parser.add_argument('--controller_addr', type=str, help='Controller address for drone connection')
+parser.add_argument('--trigger_rerr', choices=['True', 'False'], default=False, help='Allow RERRs to be triggered with route caching')
 args = parser.parse_args()
 
 # Global variables
@@ -646,6 +647,8 @@ spec:
           value: "{'true' if is_leader else 'false'}"
         - name: ENABLE_LEADER
           value: "{args.enable_leader}"{additional_env}
+        - name: TRIGGER_RERR
+          value: "{args.trigger_rerr}"
       ports:
         - name: action-port
           protocol: TCP
