@@ -8,9 +8,10 @@ metadata:
     tier: drone
 spec:
   hostname: drone1
-  containers: 
-    - name: drone1
-      image: cyu72/drone:latest
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -18,24 +19,36 @@ spec:
           value: "1"
         - name: PORT
           value: "65456"
-        - name: NODE_ID
-          value: "1"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "7"
+          value: "25"
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "true"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone1-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
       ports:
         - name: action-port
           protocol: TCP
@@ -46,6 +59,23 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "1"
+        - name: NODE_IP
+          value: "drone1-service.default"
 ---
 apiVersion: v1
 kind: Service
@@ -60,7 +90,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP
@@ -69,7 +99,7 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: 30001
 ---
 apiVersion: v1
@@ -82,9 +112,10 @@ metadata:
     tier: drone
 spec:
   hostname: drone2
-  containers: 
-    - name: drone2
-      image: cyu72/drone:latest
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -92,24 +123,36 @@ spec:
           value: "2"
         - name: PORT
           value: "65456"
-        - name: NODE_ID
-          value: "2"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "7"
+          value: "25"
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone2-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
       ports:
         - name: action-port
           protocol: TCP
@@ -120,6 +163,23 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "2"
+        - name: NODE_IP
+          value: "drone2-service.default"
 ---
 apiVersion: v1
 kind: Service
@@ -134,7 +194,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP
@@ -143,7 +203,7 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: 30002
 ---
 apiVersion: v1
@@ -156,9 +216,10 @@ metadata:
     tier: drone
 spec:
   hostname: drone3
-  containers: 
-    - name: drone3
-      image: cyu72/drone:latest
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -166,24 +227,36 @@ spec:
           value: "3"
         - name: PORT
           value: "65456"
-        - name: NODE_ID
-          value: "3"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "7"
+          value: "25"
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone3-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
       ports:
         - name: action-port
           protocol: TCP
@@ -194,6 +267,23 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "3"
+        - name: NODE_IP
+          value: "drone3-service.default"
 ---
 apiVersion: v1
 kind: Service
@@ -208,7 +298,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP
@@ -217,7 +307,7 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: 30003
 ---
 apiVersion: v1
@@ -230,9 +320,10 @@ metadata:
     tier: drone
 spec:
   hostname: drone4
-  containers: 
-    - name: drone4
-      image: cyu72/drone:latest
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -240,24 +331,36 @@ spec:
           value: "4"
         - name: PORT
           value: "65456"
-        - name: NODE_ID
-          value: "4"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "7"
+          value: "25"
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone4-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
       ports:
         - name: action-port
           protocol: TCP
@@ -268,6 +371,23 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "4"
+        - name: NODE_IP
+          value: "drone4-service.default"
 ---
 apiVersion: v1
 kind: Service
@@ -282,7 +402,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP
@@ -291,7 +411,7 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: 30004
 ---
 apiVersion: v1
@@ -304,9 +424,10 @@ metadata:
     tier: drone
 spec:
   hostname: drone5
-  containers: 
-    - name: drone5
-      image: cyu72/drone:latest
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
@@ -314,24 +435,36 @@ spec:
           value: "5"
         - name: PORT
           value: "65456"
-        - name: NODE_ID
-          value: "5"
         - name: TESLA_DISCLOSE
           value: "10"
         - name: MAX_HOP_COUNT
-          value: "7"
+          value: "25"
         - name: MAX_SEQ_COUNT
           value: "50"
         - name: CONTROLLER_ADDR
-          value: "10.198.101.24"
+          value: "192.168.4.32"
         - name: TIMEOUT_SEC
           value: "30"
         - name: LOG_LEVEL
-          value: "DEBUG"
+          value: "INFO"
         - name: GCS_IP
           value: "gcs-service.default"
         - name: DRONE_COUNT
-          value: "5"
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone5-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
       ports:
         - name: action-port
           protocol: TCP
@@ -342,6 +475,23 @@ spec:
         - name: start-port
           protocol: TCP
           containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "5"
+        - name: NODE_IP
+          value: "drone5-service.default"
 ---
 apiVersion: v1
 kind: Service
@@ -356,7 +506,7 @@ spec:
   ports:
   - name: drone-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP
@@ -365,8 +515,1672 @@ spec:
   - name: start-port
     protocol: TCP
     port: 8080
-    targetPort: 8080 
+    targetPort: 8080
     nodePort: 30005
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone6
+  namespace: default
+  labels:
+    app: drone6
+    tier: drone
+spec:
+  hostname: drone6
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "6"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone6-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "6"
+        - name: NODE_IP
+          value: "drone6-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone6-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone6
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30006
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone7
+  namespace: default
+  labels:
+    app: drone7
+    tier: drone
+spec:
+  hostname: drone7
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "7"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone7-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "7"
+        - name: NODE_IP
+          value: "drone7-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone7-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone7
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30007
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone8
+  namespace: default
+  labels:
+    app: drone8
+    tier: drone
+spec:
+  hostname: drone8
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "8"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone8-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "8"
+        - name: NODE_IP
+          value: "drone8-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone8-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone8
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30008
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone9
+  namespace: default
+  labels:
+    app: drone9
+    tier: drone
+spec:
+  hostname: drone9
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "9"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone9-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "9"
+        - name: NODE_IP
+          value: "drone9-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone9-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone9
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30009
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone10
+  namespace: default
+  labels:
+    app: drone10
+    tier: drone
+spec:
+  hostname: drone10
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "10"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone10-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "10"
+        - name: NODE_IP
+          value: "drone10-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone10-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone10
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30010
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone11
+  namespace: default
+  labels:
+    app: drone11
+    tier: drone
+spec:
+  hostname: drone11
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "11"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone11-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "11"
+        - name: NODE_IP
+          value: "drone11-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone11-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone11
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30011
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone12
+  namespace: default
+  labels:
+    app: drone12
+    tier: drone
+spec:
+  hostname: drone12
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "12"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone12-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "12"
+        - name: NODE_IP
+          value: "drone12-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone12-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone12
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30012
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone13
+  namespace: default
+  labels:
+    app: drone13
+    tier: drone
+spec:
+  hostname: drone13
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "13"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone13-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "13"
+        - name: NODE_IP
+          value: "drone13-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone13-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone13
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30013
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone14
+  namespace: default
+  labels:
+    app: drone14
+    tier: drone
+spec:
+  hostname: drone14
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "14"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone14-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "14"
+        - name: NODE_IP
+          value: "drone14-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone14-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone14
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30014
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone15
+  namespace: default
+  labels:
+    app: drone15
+    tier: drone
+spec:
+  hostname: drone15
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "15"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone15-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "15"
+        - name: NODE_IP
+          value: "drone15-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone15-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone15
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30015
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone16
+  namespace: default
+  labels:
+    app: drone16
+    tier: drone
+spec:
+  hostname: drone16
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "16"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone16-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "16"
+        - name: NODE_IP
+          value: "drone16-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone16-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone16
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30016
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone17
+  namespace: default
+  labels:
+    app: drone17
+    tier: drone
+spec:
+  hostname: drone17
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "17"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone17-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "17"
+        - name: NODE_IP
+          value: "drone17-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone17-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone17
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30017
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone18
+  namespace: default
+  labels:
+    app: drone18
+    tier: drone
+spec:
+  hostname: drone18
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "18"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone18-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "18"
+        - name: NODE_IP
+          value: "drone18-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone18-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone18
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30018
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone19
+  namespace: default
+  labels:
+    app: drone19
+    tier: drone
+spec:
+  hostname: drone19
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "19"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone19-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "19"
+        - name: NODE_IP
+          value: "drone19-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone19-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone19
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30019
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone20
+  namespace: default
+  labels:
+    app: drone20
+    tier: drone
+spec:
+  hostname: drone20
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "20"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone20-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "20"
+        - name: NODE_IP
+          value: "drone20-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone20-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone20
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30020
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drone21
+  namespace: default
+  labels:
+    app: drone21
+    tier: drone
+spec:
+  hostname: drone21
+  containers:
+    - name: logs
+      image: cyu72/drone:simulation-terminal
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      env:
+        - name: NODE_ID
+          value: "21"
+        - name: PORT
+          value: "65456"
+        - name: TESLA_DISCLOSE
+          value: "10"
+        - name: MAX_HOP_COUNT
+          value: "25"
+        - name: MAX_SEQ_COUNT
+          value: "50"
+        - name: CONTROLLER_ADDR
+          value: "192.168.4.32"
+        - name: TIMEOUT_SEC
+          value: "30"
+        - name: LOG_LEVEL
+          value: "INFO"
+        - name: GCS_IP
+          value: "gcs-service.default"
+        - name: DRONE_COUNT
+          value: "21"
+        - name: DISCOVERY_INTERVAL
+          value: "360"
+        - name: IS_LEADER
+          value: "false"
+        - name: ENABLE_LEADER
+          value: "True"
+        - name: TRIGGER_RERR
+          value: "False"
+        - name: NODE_IP
+          value: "drone21-service.default"
+        - name: SN
+          value: "100000009e15344d"
+        - name: EEPROM_ID
+          value: "00005d5d9e15344d61eacbb2"
+      ports:
+        - name: action-port
+          protocol: TCP
+          containerPort: 65456
+        - name: brdcst-port
+          protocol: UDP
+          containerPort: 65457
+        - name: start-port
+          protocol: TCP
+          containerPort: 8080
+        - name: ipc
+          protocol: TCP
+          containerPort: 60137
+
+    - name: terminal
+      image: cyu72/drone:latest
+      imagePullPolicy: Always
+      command: ["./drone_app", "--terminal"]
+      stdin: true
+      tty: true
+      env:
+        - name: ROUTING_HOST
+          value: "localhost"
+        - name: NODE_ID
+          value: "21"
+        - name: NODE_IP
+          value: "drone21-service.default"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: drone21-service
+spec:
+  externalTrafficPolicy: Local
+  type: LoadBalancer
+  selector:
+    app: drone21
+    tier: drone
+  ports:
+  - name: drone-port
+    protocol: TCP
+    port: 65456
+    targetPort: 65456
+  - name: udp-test-port
+    protocol: UDP
+    port: 65457
+    targetPort: 65457
+  - name: start-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+    nodePort: 30021
 ---
 apiVersion: v1
 kind: Pod
@@ -378,14 +2192,19 @@ metadata:
     tier: drone
 spec:
   hostname: gcs
-  containers: 
+  containers:
     - name: gcs
-      image: cyu72/gcs:latest
+      image: cyu72/gcs:simulation
+      imagePullPolicy: Always
       stdin: true
       tty: true
       env:
         - name: SKIP_VERIFICATION
           value: "True"
+        - name: LEADER_DRONES
+          value: "drone1-service.default"
+        - name: ALL_LEADER_DRONES
+          value: "drone1-service.default"
       ports:
         - name: main-port
           protocol: TCP
@@ -409,7 +2228,7 @@ spec:
   ports:
   - name: gcs-port
     protocol: TCP
-    port: 80
+    port: 65456
     targetPort: 65456
   - name: udp-test-port
     protocol: UDP

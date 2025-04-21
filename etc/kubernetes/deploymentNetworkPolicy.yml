@@ -1,32 +1,962 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-selector1
+  name: ingress-selector16
 spec:
   podSelector:
     matchLabels:
-      app: drone1
+      app: drone16
       tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, gcs-service, drone2]}
+        - key: app
+          operator: In
+          values: [drone15, drone17]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone15, drone17]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: ingress-selector2
+  name: ingress-selector17
 spec:
   podSelector:
     matchLabels:
-      app: drone2
+      app: drone17
       tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, gcs-service, drone1]}
+        - key: app
+          operator: In
+          values: [drone16, drone18, drone15]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone16, drone18, drone15]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector18
+spec:
+  podSelector:
+    matchLabels:
+      app: drone18
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone17, drone19]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone17, drone19]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector19
+spec:
+  podSelector:
+    matchLabels:
+      app: drone19
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone18, drone20]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone18, drone20]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector20
+spec:
+  podSelector:
+    matchLabels:
+      app: drone20
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone19, drone21]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone19, drone21]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector21
+spec:
+  podSelector:
+    matchLabels:
+      app: drone21
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone20, drone9]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone20, drone9]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector9
+spec:
+  podSelector:
+    matchLabels:
+      app: drone9
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone21]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone21]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector15
+spec:
+  podSelector:
+    matchLabels:
+      app: drone15
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone16, drone14, drone17]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone16, drone14, drone17]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector14
+spec:
+  podSelector:
+    matchLabels:
+      app: drone14
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone15, drone13, drone12]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone15, drone13, drone12]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector13
+spec:
+  podSelector:
+    matchLabels:
+      app: drone13
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone14, drone12]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone14, drone12]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector12
+spec:
+  podSelector:
+    matchLabels:
+      app: drone12
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone13, drone11, drone14]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone13, drone11, drone14]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector11
+spec:
+  podSelector:
+    matchLabels:
+      app: drone11
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone12, drone7]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone12, drone7]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector7
+spec:
+  podSelector:
+    matchLabels:
+      app: drone7
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone11, drone10]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone11, drone10]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector10
+spec:
+  podSelector:
+    matchLabels:
+      app: drone10
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone7, drone8]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone7, drone8]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector8
+spec:
+  podSelector:
+    matchLabels:
+      app: drone8
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone6, drone10]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone6, drone10]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector6
+spec:
+  podSelector:
+    matchLabels:
+      app: drone6
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone8, drone5, drone4]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone8, drone5, drone4]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -37,11 +967,56 @@ spec:
     matchLabels:
       app: drone3
       tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, gcs-service, drone5, drone4]}
+        - key: app
+          operator: In
+          values: [drone2, drone4]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone2, drone4]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -52,11 +1027,56 @@ spec:
     matchLabels:
       app: drone4
       tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, gcs-service, drone3]}
+        - key: app
+          operator: In
+          values: [drone3, drone5, drone6, drone2]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone3, drone5, drone6, drone2]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -67,9 +1087,173 @@ spec:
     matchLabels:
       app: drone5
       tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
   ingress:
   - from:
     - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
         matchExpressions:
-        - {key: app, operator: In, values: [gcs, gcs-service, drone3]}
+        - key: app
+          operator: In
+          values: [drone6, drone4]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone6, drone4]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector2
+spec:
+  podSelector:
+    matchLabels:
+      app: drone2
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone3, drone1, drone4]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone3, drone1, drone4]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ingress-selector1
+spec:
+  podSelector:
+    matchLabels:
+      app: drone1
+      tier: drone
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: gcs
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone2]
+    ports:
+    - protocol: TCP
+      port: 65456
+    - protocol: UDP
+      port: 65457
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 60137
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: gcs
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: In
+          values: [drone2]
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns

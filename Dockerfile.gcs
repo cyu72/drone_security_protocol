@@ -26,8 +26,6 @@ COPY gcs/config.py \
      gcs/allowed_devices.json \
      ./
 
-COPY gcs/certs/ ./certs/
-
 ENV PATH="/app/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
