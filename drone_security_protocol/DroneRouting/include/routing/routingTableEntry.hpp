@@ -19,6 +19,9 @@ struct ROUTING_TABLE_ENTRY {
     std::chrono::seconds tesla_disclosure_time;
     string hash; // Most recent authenticator hash
     std::queue<HERR> herr;
+    // Cross-swarm routing fields
+    bool isCrossSwarm; // Flag indicating if this is a cross-swarm route
+    string targetLeader; // Leader address for the destination swarm
 
     ROUTING_TABLE_ENTRY(){
         this->destAddr = "ERR";
@@ -29,14 +32,19 @@ struct ROUTING_TABLE_ENTRY {
         this->hash = "";
         this->tesla_hash = "ERR";
         this->tesla_disclosure_time = std::chrono::seconds(0);
+        this->isCrossSwarm = false;
+        this->targetLeader = "";
     }
 
+    
     ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl){
         this->destAddr = destAddr;
         this->intermediateAddr = intermediateAddr;
         this->seqNum = seqNum;
         this->cost = cost;
         this->ttl = ttl;
+        this->isCrossSwarm = false;
+        this->targetLeader = "";
     }
 
     ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash){
@@ -46,6 +54,8 @@ struct ROUTING_TABLE_ENTRY {
         this->cost = cost;
         this->ttl = ttl;
         this->hash = hash;
+        this->isCrossSwarm = false;
+        this->targetLeader = "";
     }
 
     ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash, HERR herr){
@@ -56,6 +66,21 @@ struct ROUTING_TABLE_ENTRY {
         this->ttl = ttl;
         this->hash = hash;
         this->insertHERR(herr);
+        this->isCrossSwarm = false;
+        this->targetLeader = "";
+    }
+    
+    // Constructor with cross-swarm parameters
+    ROUTING_TABLE_ENTRY(string destAddr, string intermediateAddr, int seqNum, int cost, std::chrono::system_clock::time_point ttl, string hash, HERR herr, bool isCrossSwarm, string targetLeader){
+        this->destAddr = destAddr;
+        this->intermediateAddr = intermediateAddr;
+        this->seqNum = seqNum;
+        this->cost = cost;
+        this->ttl = ttl;
+        this->hash = hash;
+        this->insertHERR(herr);
+        this->isCrossSwarm = isCrossSwarm;
+        this->targetLeader = targetLeader;
     }
 
     void print() const {
@@ -66,6 +91,11 @@ struct ROUTING_TABLE_ENTRY {
         while (!temp.empty()) {
             cout << temp.front() << " ";
             temp.pop();
+        }
+        
+        cout << ", isCrossSwarm: " << (isCrossSwarm ? "true" : "false");
+        if (isCrossSwarm) {
+            cout << ", targetLeader: " << targetLeader;
         }
         
         cout << endl;
@@ -86,7 +116,14 @@ struct ROUTING_TABLE_ENTRY {
     friend std::ostream& operator<<(std::ostream& os, const ROUTING_TABLE_ENTRY& entry) {
         os << "{ destAddr: " << entry.destAddr << ", intermediateAddr: " << entry.intermediateAddr
            << ", seqNum: " << entry.seqNum << ", cost: " << entry.cost
-           << ", ttl: " << std::chrono::duration_cast<std::chrono::seconds>(entry.ttl.time_since_epoch()).count() << " seconds, hash: " << entry.hash << " }";
+           << ", ttl: " << std::chrono::duration_cast<std::chrono::seconds>(entry.ttl.time_since_epoch()).count() 
+           << " seconds, hash: " << entry.hash;
+        
+        if (entry.isCrossSwarm) {
+            os << ", isCrossSwarm: true, targetLeader: " << entry.targetLeader;
+        }
+        
+        os << " }";
         return os;
     }
 

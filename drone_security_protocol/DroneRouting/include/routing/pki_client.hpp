@@ -24,24 +24,24 @@ public:
     };
 
     using CertStatusCallback = std::function<void(bool)>;
-    
-    PKIClient(std::string_view serial, 
+
+    PKIClient(std::string_view serial,
               std::string_view eeprom_id,
               CertStatusCallback status_callback = nullptr);
-              
+
     PKIClient(const PKIClient&) = delete;
     PKIClient& operator=(const PKIClient&) = delete;
     ~PKIClient() = default;
 
-    [[nodiscard]] bool needsCertificate() const noexcept { 
-        return !has_valid_cert_.load(std::memory_order_acquire); 
+    [[nodiscard]] bool needsCertificate() const noexcept {
+        return !has_valid_cert_.load(std::memory_order_acquire);
     }
-    
+
     [[nodiscard]] bool validatePeer(json& msg);
     [[nodiscard]] bool signMessage(std::vector<uint8_t>& msg_data);
-    [[nodiscard]] bool verifyMessage(const std::vector<uint8_t>& msg_data, 
+    [[nodiscard]] bool verifyMessage(const std::vector<uint8_t>& msg_data,
                                    const std::vector<uint8_t>& signature);
-    
+
     void waitForCertificate(std::atomic<bool>& running);
 
     CertificateData getCertificate() const noexcept { return m_certificate; }
@@ -50,7 +50,7 @@ public:
 private:
     CertificateData m_certificate;
     [[nodiscard]] bool requestCertificate();
-    
+
     std::string serial_;
     std::string eeprom_id_;
     std::atomic<bool> has_valid_cert_;
@@ -62,5 +62,5 @@ private:
     std::unordered_map<std::string, std::vector<uint8_t>> pending_challenges;
     std::mutex challenge_mutex;
 
-    const char* GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : (std::cerr << "Error: GCS_IP environment variable not set\n", std::exit(1), "");
+    std::string GCS_IP;
 };
