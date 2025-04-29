@@ -183,15 +183,6 @@ struct HERR {
         string computed_hash = compute_hash(rerr);
         string computed_mac = compute_mac(computed_hash, tesla_key);
 
-        // For debugging
-        std::cout << "HERR Verification:" << std::endl;
-        std::cout << "  Stored hash: " << hRERR << std::endl;
-        std::cout << "  Computed hash: " << computed_hash << std::endl;
-        std::cout << "  Stored MAC: " << mac_t << std::endl;
-        std::cout << "  Computed MAC: " << computed_mac << std::endl;
-        std::cout << "  Tesla key: " << tesla_key << std::endl;
-        std::cout << "  RERR JSON: " << rerr.serialize() << std::endl;
-
         bool hash_match = (computed_hash == hRERR);
         bool mac_match = (computed_mac == mac_t);
         std::cout << "  Hash match: " << (hash_match ? "YES" : "NO") << std::endl;

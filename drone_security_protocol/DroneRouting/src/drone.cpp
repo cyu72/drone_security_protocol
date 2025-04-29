@@ -703,15 +703,6 @@ void drone::routeErrorHandler(json& data){
             RERR rerr_prime;
             rerr_prime.create_rerr_prime(nonce, destination, tsla_key);
 
-            // Log key values for debugging
-            logger->info("Tesla key from table: {}", table_tesla_key);
-            logger->info("RERR_prime values - nonce: {}, destination: {}",
-                      rerr_prime.nonce_list[0], rerr_prime.dst_list[0]);
-            logger->info("GIVEN TESLA key used for verification: {}", tsla_key);
-            logger->info("SAVED TESLA key used for verification: {}", table_tesla_key);
-
-            // Perform verification
-            logger->info("Starting TESLA verification...");
             bool verification_result = (tsla_key == table_tesla_key);
             // compute hash over RERR afterwards if tesla keys match
 
@@ -720,15 +711,19 @@ void drone::routeErrorHandler(json& data){
 
                 try {
                     // Propagate RERR upstream
-                    TESLA::nonce_data upstream_data = this->tesla.getNonceData(msg.retAddr);
-                    msg.create_rerr(upstream_data.nonce, upstream_data.tesla_key,
-                                  upstream_data.destination, upstream_data.auth);
-                    msg.setSrcAddr(this->addr); // Set source address to current node
+                    // TESLA::nonce_data upstream_data = this->tesla.getNonceData(msg.retAddr);
+                    // msg.create_rerr(upstream_data.nonce, upstream_data.tesla_key,
+                    //               upstream_data.destination, upstream_data.auth);
+                    // msg.setSrcAddr(this->addr); // Set source address to current node
 
                     // Send to next hop
                     auto next_hop = this->tesla.routingTable.get(msg.retAddr)->intermediateAddr;
                     logger->info("Propagating RERR to: {}", next_hop);
-                    sendData(next_hop, msg.serialize());
+                    if (next_hop == this->addr) {
+                        sendData(msg.retAddr, msg.serialize());
+                    } else {
+                        sendData(next_hop, msg.serialize());
+                    }
 
                     // Remove entry from routing table
                     {
