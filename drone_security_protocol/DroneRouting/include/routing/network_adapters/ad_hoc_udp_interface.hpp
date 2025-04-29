@@ -6,8 +6,8 @@
 #include <cstring>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#include <sys/ioctl.h>  // Added for ioctl
-#include <net/if.h>     // Added for interface constants
+#include <sys/ioctl.h>
+#include <net/if.h>
 #include <unistd.h>
 #include <netinet/in.h>
 
@@ -111,8 +111,8 @@ public:
 private:
     int sock;
     struct sockaddr_in addr;
-    in_addr_t my_addr;  // Our IP address
-    int my_port;        // Our port number
+    in_addr_t my_addr;
+    int my_port;
 };
 
 #endif

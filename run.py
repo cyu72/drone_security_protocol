@@ -73,12 +73,6 @@ def generate_large_hop_extended_matrix(n, numDrones):
     return array
 
 def generate_multi_swarm_matrix(n, numDrones):
-    """Generate a matrix with 2 distinct swarms that are positioned closer together.
-
-    This topology places multiple swarms in adjacent areas of the grid to facilitate
-    better communication between swarms, especially between leader drones.
-    """
-    # Hardcoded 2D array for multi-swarm matrix
     matrix = [
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -331,18 +325,6 @@ spec:
         file.write("\n---\n".join(policies))
 
 def move_drone(matrix, drone, to_pos, update_network=True):
-    """
-    Move a drone to a new position in the matrix.
-    
-    Args:
-        matrix: The grid matrix
-        drone: The drone number to move
-        to_pos: Tuple (i, j) representing the target position
-        update_network: Whether to update network policies after movement
-    
-    Returns:
-        Updated matrix
-    """
     to_i, to_j = to_pos
     for i in range(len(matrix)):
         for j in range(len(matrix[i])):
@@ -795,16 +777,12 @@ data:
 def handle_minikube_startup():
     """Handle minikube startup if needed."""
     if args.startup:
-        # Use subprocess.run directly for minikube commands (non-kubectl)
         subprocess.run("minikube start --insecure-registry='localhost:5001' --network-plugin=cni --cni=calico", shell=True, check=True)
-
-        # Use our utility function for kubectl commands
         run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.4/manifests/calico.yaml",
                         "Applying Calico networking")
         run_kubectl_command("kubectl apply -f https://raw.githubusercontent.com/metallb/metallb/v0.13.12/config/manifests/metallb-native.yaml",
                         "Applying MetalLB load balancer")
 
-        # Use subprocess.run for minikube addon command
         subprocess.run("minikube addons enable metallb", shell=True, check=True)
         time.sleep(45)  # Wait for everything to initialize
 

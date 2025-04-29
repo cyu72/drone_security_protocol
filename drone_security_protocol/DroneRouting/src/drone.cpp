@@ -9,7 +9,6 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->seqNum = 1;
     this->GCS_IP = std::getenv("GCS_IP") ? std::getenv("GCS_IP") : "gcs-service.default";
 
-    // Initialize the CRL cache as empty
     crlCacheLastRefreshed = std::chrono::steady_clock::time_point();
 
     this->leaderFunctionalityEnabled = (std::getenv("ENABLE_LEADERSHIP") == nullptr ||
@@ -18,14 +17,12 @@ drone::drone(int port, int nodeID) : udpInterface(BRDCST_PORT), tcpInterface(por
     this->isLeader = (std::getenv("IS_LEADER") != nullptr &&
     std::string(std::getenv("IS_LEADER")) == "true");
 
-    // Initialize known leaders from environment variable
     const char* otherLeadersEnv = std::getenv("OTHER_LEADERS");
     if (otherLeadersEnv) {
         std::string leaders(otherLeadersEnv);
         std::istringstream iss(leaders);
         std::string leader;
 
-        // Parse comma-separated list of leader addresses
         while (std::getline(iss, leader, ',')) {
             if (!leader.empty()) {
                 this->knownLeaders.push_back(leader);
@@ -86,8 +83,6 @@ void drone::clientResponseThread() {
 
         try {
             jsonData = json::parse(rawMessage);
-
-            // Check if type field exists and is valid
             if (!jsonData.contains("type")) {
                 logger->error("Message missing type field: {}", rawMessage);
                 continue;
@@ -101,7 +96,6 @@ void drone::clientResponseThread() {
             int messageType = jsonData["type"].get<int>();
             bool isFromIPC = jsonData.contains("from_ipc") && jsonData["from_ipc"].get<bool>();
 
-            // Special handling for messages that don't require validation
             if (messageType == CERTIFICATE_VALIDATION) {
 
                 if (!jsonData.contains("srcAddr")) {
@@ -1017,7 +1011,7 @@ bool drone::isNodeOnCRL(const std::string& nodeAddr) {
     }
 
     try {
-        // First, check certificate info
+        // Check certificate info
         std::string certificate;
         {
             std::lock_guard<std::mutex> lock(networkNodesMutex);
@@ -1760,7 +1754,7 @@ void drone::handleCrossSwarmRREP(json& data) {
                      msg.forwardingLeader, msg.srcAddr);
 
         // Verify the leader's signature
-        // In a real implementation, this would use the leader's public key
+        // (Note: No check for the signature is made here)
         if (msg.leaderSignature.empty()) {
             logger->error("Invalid cross-swarm RREP: Missing leader signature");
             return;
@@ -2244,14 +2238,11 @@ void drone::joinResponseHandler(json& data) {
             return;
         }
 
-        // Update the valid node list
         {
             std::lock_guard<std::mutex> lock(validNodeListMutex);
             validNodeList = response.validNodeList;
             this->hasJoinedSwarm = true;
         }
-
-        // Add all nodes from the valid node list to our swarm members set
         {
             std::lock_guard<std::mutex> lock(swarmMembersMutex);
             for (const auto& node : response.validNodeList) {
@@ -2315,21 +2306,16 @@ void drone::propagateValidNodeList() {
     response.srcAddr = this->addr;
     response.timestamp = std::chrono::system_clock::now();
 
-    // Prepare the list of validated nodes
     {
         std::lock_guard<std::mutex> lock(validationMutex);
         response.validNodeList.assign(validatedNodes.begin(), validatedNodes.end());
         response.validNodeList.push_back(this->addr);
     }
-
-    // Get the list of swarm members to send to
     std::set<std::string> currentMembers;
     {
         std::lock_guard<std::mutex> lock(swarmMembersMutex);
         currentMembers = swarmMembers;
     }
-
-    // Don't send to self
     currentMembers.erase(this->addr);
 
     if (currentMembers.empty()) {
@@ -2343,7 +2329,6 @@ void drone::propagateValidNodeList() {
     // Send the list to all current swarm members
     for (const auto& member : currentMembers) {
         std::thread([this, member, response]() {
-            // Clone response for thread safety
             auto responseCopy = response;
             if (sendData(member, responseCopy.serialize()) != 0) {
                 logger->error("Failed to propagate valid node list to swarm member {}", member);
@@ -2360,7 +2345,7 @@ std::vector<string> drone::getOtherLeaderAddresses() {
     otherLeaders.reserve(knownLeaders.size());
 
     for (const auto& leader : knownLeaders) {
-        if (leader != this->addr) { // Don't include self
+        if (leader != this->addr) {
             otherLeaders.push_back(leader);
         }
     }

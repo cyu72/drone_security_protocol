@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Enable parallel compilation
 include(ProcessorCount)
 ProcessorCount(N)
 if(NOT N EQUAL 0)
@@ -21,7 +20,6 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_SOURCE_DIR}/include/routing)
 include(FetchContent)
 
-# Dependencies remain the same
 FetchContent_Declare(
   nlohmann_json
   GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -51,7 +49,6 @@ if(NOT OpenSSL_FOUND)
   message(FATAL_ERROR "OpenSSL not found. Please install OpenSSL or specify OPENSSL_ROOT_DIR.")
 endif()
 
-# Library target
 add_library(DroneRouting SHARED ${LIB_SOURCES})
 target_include_directories(DroneRouting 
   PUBLIC 
@@ -74,6 +71,5 @@ set_target_properties(DroneRouting PROPERTIES
   UNITY_BUILD ON
 )
 
-# Executable target
 add_executable(drone_app src/main.cpp)
 target_link_libraries(drone_app PRIVATE DroneRouting)

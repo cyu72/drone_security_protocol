@@ -45,7 +45,7 @@
 #include "routingMap.hpp"
 #include "routingTableEntry.hpp"
 #include "pki_client.hpp"
-#include "network_adapters/kube_udp_interface.hpp" // change to ad hoc if needed
+#include "network_adapters/ad_hoc_udp_interface.hpp" // change to ad hoc if needed
 #include "network_adapters/tcp_interface.hpp"
 
 using json = nlohmann::json;
