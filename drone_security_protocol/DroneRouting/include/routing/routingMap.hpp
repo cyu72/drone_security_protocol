@@ -54,32 +54,14 @@ public:
         
         if (it == map.end()) {
             map[key] = value;
-            if (herr_val) {
-                map[key].insertHERR(*herr_val);
-            }
         } else {
-            if (herr_val) {
-                // Update everything except hash
-                it->second.destAddr = value.destAddr;
-                it->second.intermediateAddr = value.intermediateAddr;
-                it->second.seqNum = value.seqNum;
-                it->second.cost = value.cost;
-                if (!value.hash.empty()) { 
-                    it->second.hash = value.hash;
-                }
-                it->second.tesla_hash = value.tesla_hash;
-                it->second.tesla_disclosure_time = value.tesla_disclosure_time;
-                it->second.ttl = value.ttl;
-                it->second.insertHERR(*herr_val);
-            } else {
-                // Update entry completely except for hash and ttl
-                it->second.destAddr = value.destAddr;
-                it->second.intermediateAddr = value.intermediateAddr;
-                it->second.seqNum = value.seqNum;
-                it->second.cost = value.cost;
-                if (!value.hash.empty()) { 
-                    it->second.hash = value.hash;
-                }
+            it->second.destAddr = value.destAddr;
+            it->second.intermediateAddr = value.intermediateAddr;
+            it->second.seqNum = value.seqNum;
+            it->second.cost = value.cost;
+            it->second.tsla_key = value.tsla_key;
+            if (!value.hash.empty()) { 
+                it->second.hash = value.hash;
             }
         }
     }

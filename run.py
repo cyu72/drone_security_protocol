@@ -17,7 +17,7 @@ matrix = []
 parser = argparse.ArgumentParser(description='AZT Drone Security Protocol Controller')
 parser.add_argument('--drone_count', type=int, default=10, help='Specify number of drones in simulation')
 parser.add_argument('--startup', action='store_true', help='Complete initial startup process (minikube)')
-parser.add_argument('--tesla_disclosure_time', type=int, default=10, help='Disclosure period in seconds of every TESLA key disclosure message')
+parser.add_argument('--tesla_disclosure_time', type=int, default=30, help='Disclosure period in seconds of every TESLA key disclosure message')
 parser.add_argument('--max_hop_count', type=int, default=25, help='Maximum number of nodes we can route messages through')
 parser.add_argument('--max_seq_count', type=int, default=50, help='Maximum number of sequence numbers we can store')
 parser.add_argument('--timeout', type=int, default=30, help='Timeout for each request')

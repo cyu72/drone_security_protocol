@@ -251,12 +251,6 @@ void drone::clientResponseThread() {
 
                     pki_client->storePendingChallenge(srcAddr, challenge_req.challenge_data);
 
-            //         std::string serialized = challenge_req.serialize();
-            //         if (sendData(srcAddr, serialized) != 0) {
-            //             logger->error("Failed to send challenge request to {}", srcAddr);
-            //             continue;
-            //         }
-
                     logger->debug("Challenge request sent to {}", srcAddr);
                     // continue;
                 } catch (const std::exception& e) {
@@ -681,37 +675,78 @@ void drone::processPendingRoutes() {
 }
 
 void drone::routeErrorHandler(json& data){
-    RERR msg; msg.deserialize(data);
+    try {
+        RERR msg;
+        msg.deserialize(data);
 
-    HERR currHERR = this->tesla.routingTable[msg.dst_list[0]].getMostRecentHERR();
-    RERR rerr_prime; string nonce = msg.nonce_list[0]; string tsla_key = msg.tsla_list[0]; // TODO: Replace hardcoded zero indexed references
-    rerr_prime.create_rerr_prime(nonce, msg.dst_list[0], msg.auth_list[0]);
-    rerr_prime.setSrcAddr(this->addr); // Set source address to current node
+        // Get destination from first element
+        string destination = msg.dst_list[0];
+        string nonce = msg.nonce_list[0];
+        // string auth = msg.auth_list[0];
+        string tsla_key = msg.tsla_list[0];
 
-    logger->trace("currHERR.hash = {}", currHERR.hRERR, "currHERR.mac = {}", currHERR.mac_t);
-    logger->trace("rerr_prime.nonce = {}, rerr_prime.dst = {}, rerr_prime.auth = {}",
-              rerr_prime.nonce_list[0],
-              rerr_prime.dst_list[0],
-              rerr_prime.auth_list[0]);
-    logger->trace("tsla_key = {}", tsla_key);
+        logger->info("Received RERR for destination: {}", destination);
 
-    if (currHERR.verify(rerr_prime, tsla_key)) {
-        logger->info("Successful Tesla Verification");
-
-        try {
-            TESLA::nonce_data data = this->tesla.getNonceData(msg.retAddr);
-            msg.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
-            msg.setSrcAddr(this->addr); // Set source address to current node
-            sendData(this->tesla.routingTable.get(msg.retAddr)->intermediateAddr, msg.serialize());
-
-            std::lock_guard<std::mutex> rtLock(routingTableMutex); // remove entry from routing table
-            this->tesla.routingTable.remove(msg.retAddr);
-
-        } catch (std::runtime_error& e) {
-            logger->debug("End of backpropagation reached.");
+        // Check if we have a routing table entry for this destination
+        if (!this->tesla.routingTable.find(destination)) {
+            logger->warn("No routing table entry found for destination: {}", destination);
+            return;
         }
-    } else {
-        logger->error("Invalid Tesla Verification");
+
+
+        logger->info("All saved info: ");
+        this->tesla.routingTable[msg.retAddr].print();
+        try {
+            string table_tesla_key = this->tesla.routingTable[msg.retAddr].getTeslaKey();
+
+            // Create RERR_prime for verification
+            RERR rerr_prime;
+            rerr_prime.create_rerr_prime(nonce, destination, tsla_key);
+
+            // Log key values for debugging
+            logger->info("Tesla key from table: {}", table_tesla_key);
+            logger->info("RERR_prime values - nonce: {}, destination: {}",
+                      rerr_prime.nonce_list[0], rerr_prime.dst_list[0]);
+            logger->info("GIVEN TESLA key used for verification: {}", tsla_key);
+            logger->info("SAVED TESLA key used for verification: {}", table_tesla_key);
+
+            // Perform verification
+            logger->info("Starting TESLA verification...");
+            bool verification_result = (tsla_key == table_tesla_key);
+            // compute hash over RERR afterwards if tesla keys match
+
+            if (verification_result) {
+                logger->info("TESLA Verification SUCCESSFUL for destination: {}", destination);
+
+                try {
+                    // Propagate RERR upstream
+                    TESLA::nonce_data upstream_data = this->tesla.getNonceData(msg.retAddr);
+                    msg.create_rerr(upstream_data.nonce, upstream_data.tesla_key,
+                                  upstream_data.destination, upstream_data.auth);
+                    msg.setSrcAddr(this->addr); // Set source address to current node
+
+                    // Send to next hop
+                    auto next_hop = this->tesla.routingTable.get(msg.retAddr)->intermediateAddr;
+                    logger->info("Propagating RERR to: {}", next_hop);
+                    sendData(next_hop, msg.serialize());
+
+                    // Remove entry from routing table
+                    {
+                        std::lock_guard<std::mutex> rtLock(routingTableMutex);
+                        logger->info("Removing routing table entry for: {}", msg.retAddr);
+                        this->tesla.routingTable.remove(msg.retAddr);
+                    }
+                } catch (std::runtime_error& e) {
+                    logger->info("End of RERR backpropagation reached: {}", e.what());
+                }
+            } else {
+                logger->error("TESLA Verification FAILED for destination: {}", destination);
+            }
+        } catch (std::runtime_error& e) {
+            logger->error("Error retrieving HERR from routing table: {}", e.what());
+        }
+    } catch (const std::exception& e) {
+        logger->error("Exception in routeErrorHandler: {}", e.what());
     }
 }
 
@@ -756,7 +791,8 @@ void drone::initRouteDiscovery(const string& destAddr){
     */
     std::unique_ptr<RREQ> msg = std::make_unique<RREQ>();
     msg->type = ROUTE_REQUEST; msg->srcAddr = this->addr; msg->recvAddr = this->addr;
-    msg->destAddr = destAddr; msg->srcSeqNum = ++this->seqNum; msg->ttl = this->max_hop_count;
+    msg->destAddr = destAddr; msg->srcSeqNum = ++this->seqNum; msg->ttl = this->max_hop_count; 
+    msg->tsla_key = this->tesla.getCurrentHash();
     msg->destSeqNum = [&]() {
         std::lock_guard<std::mutex> lock(this->routingTableMutex);
         auto it = this->tesla.routingTable.get(msg->destAddr);
@@ -774,14 +810,15 @@ void drone::initRouteDiscovery(const string& destAddr){
     HashTree tree = HashTree(msg->srcAddr);
     msg->hashTree = tree.toVector();
     msg->rootHash = tree.getRoot()->hash;
+    msg->tsla_key = this->tesla.getCurrentHash();
 
-    RERR rerr_prime;
-    string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
-    rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
-    rerr_prime.setSrcAddr(this->addr); // Set source address to current node
-    msg->herr = HERR::create(rerr_prime, tsla_hash);
+    // RERR rerr_prime;
+    // string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
+    // rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+    // rerr_prime.setSrcAddr(this->addr); // Set source address to current node
+    // msg->herr = HERR::create(rerr_prime, tsla_hash);
 
-    this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+    // this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
     PendingRoute pendingRoute;
     pendingRoute.destAddr = destAddr;
     pendingRoute.expirationTime = std::chrono::steady_clock::now() +
@@ -810,6 +847,7 @@ void drone::initCrossSwarmRouteDiscovery(const string& destAddr) {
         msg->ttl = this->max_hop_count;
         msg->isCrossSwarm = true; // Mark as cross-swarm request
         msg->forwardingLeader = this->addr; // This leader is forwarding
+        msg->tsla_key = this->tesla.getCurrentHash();
 
         msg->destSeqNum = [&]() {
             std::lock_guard<std::mutex> lock(this->routingTableMutex);
@@ -829,10 +867,10 @@ void drone::initCrossSwarmRouteDiscovery(const string& destAddr) {
         msg->hashTree = tree.toVector();
         msg->rootHash = tree.getRoot()->hash;
 
-        RERR rerr_prime;
-        string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
-        rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
-        msg->herr = HERR::create(rerr_prime, tsla_hash);
+        // RERR rerr_prime;
+        // string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
+        // rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+        // msg->herr = HERR::create(rerr_prime, tsla_hash);
 
         // Sign the message to authenticate between leaders
         std::vector<uint8_t> dataToSign(msg->destAddr.begin(), msg->destAddr.end());
@@ -847,7 +885,7 @@ void drone::initCrossSwarmRouteDiscovery(const string& destAddr) {
         }
         msg->leaderSignature = ss.str();
 
-        this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+        // this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
 
         // Add pending route entry
         PendingRoute pendingRoute;
@@ -898,13 +936,13 @@ void drone::initCrossSwarmRouteDiscovery(const string& destAddr) {
         HashTree tree = HashTree(msg->srcAddr);
         msg->hashTree = tree.toVector();
         msg->rootHash = tree.getRoot()->hash;
+        msg->tsla_key = this->tesla.getCurrentHash();
 
-        RERR rerr_prime;
-        string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
-        rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
-        msg->herr = HERR::create(rerr_prime, tsla_hash);
-
-        this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
+        // RERR rerr_prime;
+        // string nonce = generate_nonce(), tsla_hash = this->tesla.getCurrentHash();
+        // rerr_prime.create_rerr_prime(nonce, msg->srcAddr, msg->hash);
+        // msg->herr = HERR::create(rerr_prime, tsla_hash);
+        // this->tesla.insert(msg->destAddr, TESLA::nonce_data{nonce, tsla_hash, msg->hash, msg->srcAddr});
 
         // Add pending route entry
         PendingRoute pendingRoute;
@@ -1230,11 +1268,11 @@ void drone::routeRequestHandler(json& data){
                     if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
                         this->tesla.routingTable.insert(msg.srcAddr,
                             ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0,
-                            std::chrono::system_clock::now(), "", msg.herr, true, msg.forwardingLeader));
+                            std::chrono::system_clock::now(), "", true, msg.forwardingLeader, msg.tsla_key));
                     } else {
                         this->tesla.routingTable.insert(msg.srcAddr,
                             ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum, 0,
-                            std::chrono::system_clock::now()), msg.herr);
+                            std::chrono::system_clock::now(), "", msg.tsla_key));
                     }
                 }
 
@@ -1243,16 +1281,17 @@ void drone::routeRequestHandler(json& data){
                     getHashFromChain(1, 1) :
                     getHashFromChain(this->seqNum, 1);
 
-                RERR rerr_prime;
-                string nonce = generate_nonce();
-                string tsla_hash = this->tesla.getCurrentHash();
+                // RERR rerr_prime;
+                // string nonce = generate_nonce();
+                // string tsla_hash = this->tesla.getCurrentHash();
 
-                logger->debug("Creating RERR prime with nonce");
-                rerr_prime.create_rerr_prime(nonce, rrep.srcAddr, rrep.hash);
-                rrep.herr = HERR::create(rerr_prime, tsla_hash);
+                // logger->debug("Creating RERR prime with nonce");
+                // rerr_prime.create_rerr_prime(nonce, rrep.srcAddr, rrep.hash);
+                // rrep.herr = HERR::create(rerr_prime, tsla_hash);
 
-                this->tesla.insert(rrep.destAddr,
-                    TESLA::nonce_data{nonce, tsla_hash, rrep.hash, rrep.srcAddr});
+                // this->tesla.insert(rrep.destAddr,
+                //     TESLA::nonce_data{nonce, tsla_hash, rrep.hash, rrep.srcAddr});
+                rrep.tsla_key = this->tesla.getCurrentHash();
 
                 string buf = rrep.serialize();
                 logger->info("Sending RREP: {}", buf);
@@ -1292,13 +1331,12 @@ void drone::routeRequestHandler(json& data){
                 if (msg.isCrossSwarm && !msg.forwardingLeader.empty()) {
                     this->tesla.routingTable.insert(msg.srcAddr,
                         ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum,
-                        msg.hopCount, std::chrono::system_clock::now(), "", msg.herr,
-                        true, msg.forwardingLeader));
+                        msg.hopCount, std::chrono::system_clock::now(), "",
+                        true, msg.forwardingLeader, msg.tsla_key));
                 } else {
                     this->tesla.routingTable.insert(msg.srcAddr,
                         ROUTING_TABLE_ENTRY(msg.srcAddr, msg.recvAddr, msg.srcSeqNum,
-                        msg.hopCount, std::chrono::system_clock::now()),
-                        msg.herr);
+                        msg.hopCount, std::chrono::system_clock::now(), "", msg.tsla_key));
                 }
 
                 msg.hash = (msg.srcSeqNum == 1) ?
@@ -1310,15 +1348,15 @@ void drone::routeRequestHandler(json& data){
                 msg.hashTree = tree->toVector();
                 msg.rootHash = tree->getRoot()->hash;
 
-                RERR rerr_prime;
-                string nonce = generate_nonce();
-                string tsla_hash = this->tesla.getCurrentHash();
+                // RERR rerr_prime;
+                // string nonce = generate_nonce();
+                // string tsla_hash = this->tesla.getCurrentHash();
+                // rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
+                // msg.herr = HERR::create(rerr_prime, tsla_hash);
+                // this->tesla.insert(msg.destAddr,
+                //     TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr});
 
-                rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
-                msg.herr = HERR::create(rerr_prime, tsla_hash);
-                this->tesla.insert(msg.destAddr,
-                    TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr});
-
+                msg.tsla_key = this->tesla.getCurrentHash();
                 msg.recvAddr = this->addr;
                 string buf = msg.serialize();
                 bytes_sent += buf.size();
@@ -1331,11 +1369,18 @@ void drone::routeRequestHandler(json& data){
                         udpInterface.broadcast(buf);
                         // generate RERR
                         RERR rerr;
-                        // Attach information here for RERR
-                        TESLA::nonce_data data = this->tesla.getNonceData(msg.srcAddr);
-                        rerr.create_rerr(data.nonce, data.tesla_key, data.destination, data.auth);
+                        std::string data = generate_nonce();
+                        string current_tesla_key = this->tesla.getCurrentHash();
+                        rerr.create_rerr_prime(data, msg.srcAddr, current_tesla_key);
                         rerr.addRetAddr(msg.srcAddr);
                         rerr.setSrcAddr(this->addr);
+
+                        logger->info("RERR prime created with nonce: {}, destination: {}}",
+                                    data, msg.srcAddr);
+                        HERR test_herr = HERR::create(rerr, current_tesla_key);
+                        logger->info("SENDER: Tesla key: {}", current_tesla_key);
+                        logger->info("SENDER - Expected HERR hash: {}", test_herr.hRERR);
+                        logger->info("SENDER - Expected HERR mac: {}", test_herr.mac_t);
 
                         /*Todo: Remove from table*/
                         sendData(this->tesla.routingTable.get(msg.srcAddr)->intermediateAddr, rerr.serialize());
@@ -1400,8 +1445,8 @@ void drone::handleCrossSwarmRREQ(json& data) {
             std::lock_guard<std::mutex> lock(routingTableMutex);
             this->tesla.routingTable.insert(msg.srcAddr,
                 ROUTING_TABLE_ENTRY(msg.srcAddr, msg.forwardingLeader, msg.srcSeqNum,
-                msg.hopCount, std::chrono::system_clock::now(), "", msg.herr,
-                true, msg.forwardingLeader));
+                msg.hopCount, std::chrono::system_clock::now(), "",
+                true, msg.forwardingLeader, msg.tsla_key));
         }
 
         // Forward the RREQ to the destination node in our swarm
@@ -1433,16 +1478,16 @@ void drone::handleCrossSwarmRREQ(json& data) {
                 getHashFromChain(1, 1) :
                 getHashFromChain(this->seqNum, 1);
 
-            RERR rerr_prime;
-            string nonce = generate_nonce();
-            string tsla_hash = this->tesla.getCurrentHash();
+            // RERR rerr_prime;
+            // string nonce = generate_nonce();
+            // string tsla_hash = this->tesla.getCurrentHash();
+            // rerr_prime.create_rerr_prime(nonce, rrep.srcAddr, rrep.hash);
+            // rrep.herr = HERR::create(rerr_prime, tsla_hash);
 
-            rerr_prime.create_rerr_prime(nonce, rrep.srcAddr, rrep.hash);
-            rrep.herr = HERR::create(rerr_prime, tsla_hash);
+            // this->tesla.insert(rrep.destAddr,
+            //     TESLA::nonce_data{nonce, tsla_hash, rrep.hash, rrep.srcAddr});
 
-            this->tesla.insert(rrep.destAddr,
-                TESLA::nonce_data{nonce, tsla_hash, rrep.hash, rrep.srcAddr});
-
+            rrep.tsla_key = this->tesla.getCurrentHash();
             string buf = rrep.serialize();
             logger->info("Sending cross-swarm RREP to leader: {}", msg.forwardingLeader);
             sendData(msg.forwardingLeader, buf);
@@ -1540,7 +1585,19 @@ void drone::routeReplyHandler(json& data) {
                             msg.srcSeqNum,
                             msg.hopCount,
                             std::chrono::system_clock::now(),
-                            "", msg.herr, true, msg.forwardingLeader
+                            "", true, msg.forwardingLeader, msg.tsla_key
+                        )
+                    );
+
+                    this->tesla.routingTable.insert(
+                        msg.recvAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.recvAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            msg.hopCount,
+                            std::chrono::system_clock::now(),
+                            "", true, msg.forwardingLeader, msg.tsla_key
                         )
                     );
                 } else {
@@ -1550,10 +1607,22 @@ void drone::routeReplyHandler(json& data) {
                             msg.srcAddr,
                             msg.recvAddr,
                             msg.srcSeqNum,
-                            msg.hopCount,
-                            std::chrono::system_clock::now()
-                        ),
-                        msg.herr
+                            0,
+                            std::chrono::system_clock::now(),
+                            "", msg.tsla_key
+                        )
+                    );
+
+                    this->tesla.routingTable.insert(
+                        msg.recvAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.recvAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            0,
+                            std::chrono::system_clock::now(),
+                            "", msg.tsla_key
+                        )
                     );
                 }
 
@@ -1592,7 +1661,19 @@ void drone::routeReplyHandler(json& data) {
                             msg.srcSeqNum,
                             msg.hopCount,
                             std::chrono::system_clock::now(),
-                            "", msg.herr, true, msg.forwardingLeader
+                            "", true, msg.forwardingLeader, msg.tsla_key
+                        )
+                    );
+
+                    this->tesla.routingTable.insert(
+                        msg.recvAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.recvAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            0,
+                            std::chrono::system_clock::now(),
+                            "", true, msg.forwardingLeader, msg.tsla_key
                         )
                     );
                 } else if (!this->tesla.routingTable.find(msg.srcAddr)) {
@@ -1603,9 +1684,21 @@ void drone::routeReplyHandler(json& data) {
                             msg.recvAddr,
                             msg.srcSeqNum,
                             msg.hopCount,
-                            std::chrono::system_clock::now()
-                        ),
-                        msg.herr
+                            std::chrono::system_clock::now(), 
+                            "",
+                            msg.tsla_key
+                        )
+                    );
+                    this->tesla.routingTable.insert(
+                        msg.recvAddr,
+                        ROUTING_TABLE_ENTRY(
+                            msg.recvAddr,
+                            msg.recvAddr,
+                            msg.srcSeqNum,
+                            0,
+                            std::chrono::system_clock::now(),
+                            "", msg.tsla_key
+                        )
                     );
                 }
 
@@ -1615,19 +1708,20 @@ void drone::routeReplyHandler(json& data) {
                     getHashFromChain(msg.srcSeqNum, msg.hopCount);
                 msg.recvAddr = this->addr;
 
-                logger->debug("Creating RERR prime with nonce");
-                RERR rerr_prime;
-                string nonce = generate_nonce();
-                string tsla_hash = this->tesla.getCurrentHash();
+                // logger->debug("Creating RERR prime with nonce");
+                // RERR rerr_prime;
+                // string nonce = generate_nonce();
+                // string tsla_hash = this->tesla.getCurrentHash();
 
-                rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
-                msg.herr = HERR::create(rerr_prime, tsla_hash);
+                // rerr_prime.create_rerr_prime(nonce, msg.srcAddr, msg.hash);
+                // msg.herr = HERR::create(rerr_prime, tsla_hash);
 
-                this->tesla.insert(
-                    msg.destAddr,
-                    TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr}
-                );
+                // this->tesla.insert(
+                //     msg.destAddr,
+                //     TESLA::nonce_data{nonce, tsla_hash, msg.hash, msg.srcAddr}
+                // );
 
+                msg.tsla_key = this->tesla.getCurrentHash();
                 string buf = msg.serialize();
                 bytes_sent += buf.size();
                 auto routeEntry = this->tesla.routingTable.get(msg.destAddr);
@@ -1698,8 +1792,8 @@ void drone::handleCrossSwarmRREP(json& data) {
             std::lock_guard<std::mutex> lock(routingTableMutex);
             this->tesla.routingTable.insert(msg.srcAddr,
                 ROUTING_TABLE_ENTRY(msg.srcAddr, msg.forwardingLeader, msg.srcSeqNum,
-                msg.hopCount, std::chrono::system_clock::now(), "", msg.herr,
-                true, msg.forwardingLeader));
+                msg.hopCount, std::chrono::system_clock::now(), "",
+                true, msg.forwardingLeader, msg.tsla_key));
         }
 
         // If we are the destination, process the RREP

@@ -31,7 +31,7 @@ using std::string;
 
 enum MESSAGE_TYPE {
     ROUTE_REQUEST = 0,
-    ROUTE_REPLY, 
+    ROUTE_REPLY,
     ROUTE_ERROR,
     DATA,
     CERTIFICATE_VALIDATION,
@@ -101,9 +101,9 @@ struct RERR : public MESSAGE {
         this->auth_list = auth_list;
     }
 
-    void create_rerr(const std::vector<string>& nonce_list, 
-                            const std::vector<string>& tsla_list, 
-                            const std::vector<string>& dst_list, 
+    void create_rerr(const std::vector<string>& nonce_list,
+                            const std::vector<string>& tsla_list,
+                            const std::vector<string>& dst_list,
                             const std::vector<string>& auth_list) {
         this->type = ROUTE_ERROR;
         this->nonce_list = nonce_list;
@@ -123,18 +123,17 @@ struct RERR : public MESSAGE {
     void addRetAddr(const string& addr){
         this->retAddr = addr;
     }
-    
+
     void setSrcAddr(const string& addr){
         this->srcAddr = addr;
         this->recvAddr = addr;
     }
 
-    void create_rerr_prime(const string& nonce, const string& dst, const string& auth) {
+    void create_rerr_prime(const string& nonce, const string& dst, const string& tsla_key = "") {
         this->type = ROUTE_ERROR;
         this->nonce_list = {nonce};
-        this->tsla_list = {};  // Empty for RERR'
+        this->tsla_list = tsla_key.empty() ? std::vector<string>() : std::vector<string>{tsla_key};
         this->dst_list = {dst};
-        this->auth_list = {auth};
     }
 
     string serialize() const {
@@ -183,13 +182,24 @@ struct HERR {
     bool verify(const RERR& rerr, const string& tesla_key) const {
         string computed_hash = compute_hash(rerr);
         string computed_mac = compute_mac(computed_hash, tesla_key);
-        cout << "Computed Hash: " << computed_hash << endl;
-        cout << "Computed MAC: " << computed_mac << endl;
-        cout << "hRERR: " << hRERR << endl;
-        cout << "mac_t: " << mac_t << endl;
-        return (computed_hash == hRERR) && (computed_mac == mac_t);
+
+        // For debugging
+        std::cout << "HERR Verification:" << std::endl;
+        std::cout << "  Stored hash: " << hRERR << std::endl;
+        std::cout << "  Computed hash: " << computed_hash << std::endl;
+        std::cout << "  Stored MAC: " << mac_t << std::endl;
+        std::cout << "  Computed MAC: " << computed_mac << std::endl;
+        std::cout << "  Tesla key: " << tesla_key << std::endl;
+        std::cout << "  RERR JSON: " << rerr.serialize() << std::endl;
+
+        bool hash_match = (computed_hash == hRERR);
+        bool mac_match = (computed_mac == mac_t);
+        std::cout << "  Hash match: " << (hash_match ? "YES" : "NO") << std::endl;
+        std::cout << "  MAC match: " << (mac_match ? "YES" : "NO") << std::endl;
+
+        return hash_match && mac_match;
     }
-    
+
     json to_json() const { // FOR DEBUG PURPOSES ONLY
         return json{
             {"hRERR", hRERR},
@@ -203,11 +213,23 @@ struct HERR {
 
     private:
     static string compute_hash(const RERR& rerr) {
-        string serialized_rerr = rerr.serialize();
+        // Create a normalized JSON representation for consistent hashing
+        // This is important because the order of fields in JSON objects can vary
+        json j = json{
+            {"nonce_list", rerr.nonce_list},
+            {"tsla_list", rerr.tsla_list},
+            {"dst_list", rerr.dst_list},
+            {"auth_list", rerr.auth_list}
+        };
+
+        // Sort keys to ensure consistent serialization
+        string normalized_rerr = j.dump();
+
+        // Hash the normalized representation
         unsigned char hash[SHA256_DIGEST_LENGTH];
         SHA256_CTX sha256;
         SHA256_Init(&sha256);
-        SHA256_Update(&sha256, serialized_rerr.c_str(), serialized_rerr.size());
+        SHA256_Update(&sha256, normalized_rerr.c_str(), normalized_rerr.size());
         SHA256_Final(hash, &sha256);
         std::stringstream ss;
         for(int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
@@ -220,7 +242,7 @@ struct HERR {
         unsigned char digest[EVP_MAX_MD_SIZE];
         unsigned int digest_len;
 
-        HMAC(EVP_sha256(), 
+        HMAC(EVP_sha256(),
             key.c_str(), key.length(),
             reinterpret_cast<const unsigned char*>(data.c_str()), data.length(),
             digest, &digest_len);
@@ -241,14 +263,14 @@ struct HERR {
 struct RREQ : public MESSAGE {
     string srcAddr;
     string recvAddr; // temp field used to store next hop addr, since we are using services, cannnot directly extract last recieved ip
-    string destAddr; 
+    string destAddr;
     unsigned long srcSeqNum;
     unsigned long destSeqNum;
     string hash;
     string rootHash;
     std::vector<string> hashTree; // can optimize later to use memory more efficiently
     unsigned long hopCount;
-    HERR herr;
+    std::string tsla_key;
     int ttl; // Max number of hops allowed for RREQ to propagate through network
     bool isCrossSwarm; // Flag to indicate cross-swarm communication
     string forwardingLeader; // Leader address that is forwarding this request
@@ -267,9 +289,9 @@ struct RREQ : public MESSAGE {
         this->leaderSignature = "";
     }
 
-    RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, 
-         string hash, unsigned long hopCount, HERR herr, std::vector<string> hashTree, int ttl, string rootHash,
-         bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
+    RREQ(string srcAddr, string interAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum,
+         string hash, unsigned long hopCount, std::vector<string> hashTree, int ttl, string rootHash,
+         bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "", string tsla_key="") {
         this->type = ROUTE_REQUEST;
         this->srcAddr = srcAddr; // address of origin
         this->recvAddr = interAddr;
@@ -278,7 +300,7 @@ struct RREQ : public MESSAGE {
         this->destSeqNum = destSeqNum;
         this->hash = hash;
         this->hopCount = hopCount;
-        this->herr = herr;
+        this->tsla_key = tsla_key;
         this->hashTree = hashTree;
         this->ttl = ttl;
         this->rootHash = rootHash;
@@ -300,7 +322,7 @@ struct RREQ : public MESSAGE {
             {"hashTree", this->hashTree},
             {"ttl", this->ttl},
             {"rootHash", this->rootHash},
-            {"herr", this->herr.to_json()},
+            {"tsla_key", this->tsla_key},
             {"isCrossSwarm", this->isCrossSwarm},
             {"forwardingLeader", this->forwardingLeader},
             {"leaderSignature", this->leaderSignature}
@@ -321,8 +343,8 @@ struct RREQ : public MESSAGE {
         this->hashTree = j["hashTree"].get<std::vector<string>>();
         this->ttl = j["ttl"];
         this->rootHash = j["rootHash"];
-        this->herr = HERR::from_json(j["herr"]);
-        
+        this->tsla_key = j["tsla_key"];
+
         // Cross-swarm fields (with backward compatibility for older messages)
         this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
         this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
@@ -338,7 +360,7 @@ struct RREP : public MESSAGE {
     unsigned long destSeqNum;
     string hash;
     unsigned long hopCount;
-    HERR herr;
+    string tsla_key;
     int ttl;
     bool isCrossSwarm; // Flag to indicate cross-swarm communication
     string forwardingLeader; // Leader address that is forwarding this reply
@@ -356,9 +378,9 @@ struct RREP : public MESSAGE {
         this->leaderSignature = "";
     }
 
-    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash, 
-         unsigned long hopCount, HERR herr, int ttl, bool isCrossSwarm = false, 
-         string forwardingLeader = "", string leaderSignature = "") {
+    RREP(string srcAddr, string destAddr, unsigned long srcSeqNum, unsigned long destSeqNum, string hash,
+         unsigned long hopCount, int ttl, bool isCrossSwarm = false,
+         string forwardingLeader = "", string leaderSignature = "", string tsla_key="") {
         this->type = ROUTE_REPLY;
         this->srcAddr = srcAddr;
         this->destAddr = destAddr;
@@ -366,7 +388,7 @@ struct RREP : public MESSAGE {
         this->destSeqNum = destSeqNum;
         this->hash = hash;
         this->hopCount = hopCount;
-        this->herr = herr;
+        this->tsla_key = tsla_key;
         this->ttl = ttl;
         this->isCrossSwarm = isCrossSwarm;
         this->forwardingLeader = forwardingLeader;
@@ -383,7 +405,7 @@ struct RREP : public MESSAGE {
             {"destSeqNum", this->destSeqNum},
             {"hash", this->hash},
             {"hopCount", this->hopCount},
-            {"herr", this->herr.to_json()},
+            {"tsla_key", this->tsla_key},
             {"ttl", this->ttl},
             {"isCrossSwarm", this->isCrossSwarm},
             {"forwardingLeader", this->forwardingLeader},
@@ -401,9 +423,9 @@ struct RREP : public MESSAGE {
         this->destSeqNum = j["destSeqNum"];
         this->hash = j["hash"];
         this->hopCount = j["hopCount"];
-        this->herr = HERR::from_json(j["herr"]);
+        this->tsla_key = j["tsla_key"];
         this->ttl = j["ttl"];
-        
+
         // Cross-swarm fields (with backward compatibility for older messages)
         this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
         this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
@@ -462,7 +484,7 @@ struct INIT_MESSAGE : public MESSAGE {
         if (this->mode == TESLA) {
             j["disclosure_time"] = this->disclosure_time;
         }
-        
+
         return j.dump();
     }
 
@@ -471,14 +493,14 @@ struct INIT_MESSAGE : public MESSAGE {
         this->hash = j["hash"];
         this->srcAddr = j["srcAddr"];
         this->mode = j["mode"];
-        
+
         // Add deserialization for is_leader field
         if (j.contains("is_leader")) {
             this->is_leader = j["is_leader"];
         } else {
             this->is_leader = false;
         }
-        
+
         if (this->mode == TESLA) {
             this->disclosure_time = j["disclosure_time"];
         }
@@ -504,7 +526,7 @@ struct DATA_MESSAGE : public MESSAGE {
         this->leaderSignature = "";
     }
 
-    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false, 
+    DATA_MESSAGE(string destAddr, string srcAddr, string data, bool isBroadcast = false,
                 bool isCrossSwarm = false, string forwardingLeader = "", string leaderSignature = "") {
         this->isBroadcast = isBroadcast;
         this->type = DATA;
@@ -536,7 +558,7 @@ struct DATA_MESSAGE : public MESSAGE {
         this->destAddr = j["destAddr"];
         this->srcAddr = j["srcAddr"];
         this->data = j["data"];
-        
+
         // Cross-swarm fields (with backward compatibility for older messages)
         this->isCrossSwarm = j.contains("isCrossSwarm") ? j["isCrossSwarm"].get<bool>() : false;
         this->forwardingLeader = j.contains("forwardingLeader") ? j["forwardingLeader"].get<std::string>() : "";
@@ -593,91 +615,91 @@ struct ChallengeResponse : public ChallengeMessage {
             if (data.empty()) {
                 return "";
             }
-            
+
             BIO* bio = BIO_new(BIO_s_mem());
             BIO* b64 = BIO_new(BIO_f_base64());
             BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
             bio = BIO_push(b64, bio);
-            
+
             BIO_write(bio, data.data(), data.size());
             BIO_flush(bio);
-            
+
             char* encoded_data;
             long data_len = BIO_get_mem_data(bio, &encoded_data);
             std::string result(encoded_data, data_len);
-            
+
             BIO_free_all(bio);
             return result;
         };
-        
+
         j["signature"] = encode_base64(signature);
         j["challenge_data"] = encode_base64(challenge_data);
-        
+
         return j.dump();
     }
 
     void deserialize(json& j) override {
         ChallengeMessage::deserialize(j);
         certificate_pem = j["certificate_pem"].get<std::string>();
-        
+
         auto decode_base64 = [](const std::string& encoded) -> std::vector<uint8_t> {
             if (encoded.empty()) {
                 return std::vector<uint8_t>();
             }
-            
+
             try {
                 std::string cleaned_input = encoded;
-                cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(), 
+                cleaned_input.erase(std::remove_if(cleaned_input.begin(), cleaned_input.end(),
                     [](char c) { return std::isspace(c) || c == '\0'; }), cleaned_input.end());
                 switch (cleaned_input.length() % 4) {
                     case 2: cleaned_input += "=="; break;
                     case 3: cleaned_input += "="; break;
                 }
-                
+
                 BIO* bio = BIO_new_mem_buf(cleaned_input.data(), cleaned_input.size());
                 if (!bio) {
                     throw std::runtime_error("Failed to create memory BIO");
                 }
-                
+
                 BIO* b64 = BIO_new(BIO_f_base64());
                 if (!b64) {
                     BIO_free(bio);
                     throw std::runtime_error("Failed to create base64 BIO");
                 }
-                
+
                 BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
                 bio = BIO_push(b64, bio);
-                
+
                 std::vector<uint8_t> decoded((cleaned_input.size() * 3) / 4);
                 if (decoded.empty()) {
                     decoded.resize(1); // Ensure at least one byte for small inputs
                 }
-                
+
                 int decoded_length = BIO_read(bio, decoded.data(), decoded.size());
                 BIO_free_all(bio);
-                
+
                 if (decoded_length <= 0) {
                     if (cleaned_input.empty()) {
                         return std::vector<uint8_t>();
                     }
                     throw std::runtime_error("BIO_read failed with input: " + cleaned_input);
                 }
-                
+
                 decoded.resize(decoded_length);
                 return decoded;
-                
+
             } catch (const std::exception& e) {
                 throw std::runtime_error(std::string("Base64 decode error: ") + e.what());
             }
         };
-        
+
         try {
             const auto& sig_str = j["signature"].get<std::string>();
             const auto& chal_str = j["challenge_data"].get<std::string>();
-            
+
             signature = decode_base64(sig_str);
             challenge_data = decode_base64(chal_str);
-            
+
         } catch (const json::exception& e) {
             throw std::runtime_error(std::string("JSON parsing error: ") + e.what());
         } catch (const std::exception& e) {
@@ -696,66 +718,66 @@ struct ChallengeRequest : public ChallengeMessage {
 
     std::string serialize() const override {
         json j = json::parse(ChallengeMessage::serialize());
-        
+
         if (!challenge_data.empty()) {
             BIO* bio = BIO_new(BIO_s_mem());
             BIO* b64 = BIO_new(BIO_f_base64());
             BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
             bio = BIO_push(b64, bio);
-            
+
             BIO_write(bio, challenge_data.data(), challenge_data.size());
             BIO_flush(bio);
-            
+
             char* encoded_data;
             long data_len = BIO_get_mem_data(bio, &encoded_data);
             std::string encoded_challenge(encoded_data, data_len);
-            
+
             BIO_free_all(bio);
             j["challenge_data"] = encoded_challenge;
         } else {
             j["challenge_data"] = "";
         }
-        
+
         return j.dump();
     }
 
     void deserialize(json& j) override {
         ChallengeMessage::deserialize(j);
-        
+
         std::string encoded_challenge = j["challenge_data"].get<std::string>();
         if (encoded_challenge.empty()) {
             challenge_data.clear();
             return;
         }
-        
+
         encoded_challenge.erase(
             std::remove_if(encoded_challenge.begin(), encoded_challenge.end(),
                 [](char c) { return std::isspace(c) || c == '\0'; }),
             encoded_challenge.end()
         );
-        
+
         switch (encoded_challenge.length() % 4) {
             case 2: encoded_challenge += "=="; break;
             case 3: encoded_challenge += "="; break;
         }
-        
+
         BIO* bio = BIO_new_mem_buf(encoded_challenge.data(), encoded_challenge.size());
         BIO* b64 = BIO_new(BIO_f_base64());
         BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
         bio = BIO_push(b64, bio);
-        
+
         std::vector<uint8_t> decoded_data((encoded_challenge.size() * 3) / 4);
         if (decoded_data.empty()) {
             decoded_data.resize(1);
         }
-        
+
         int decoded_length = BIO_read(bio, decoded_data.data(), decoded_data.size());
         BIO_free_all(bio);
-        
+
         if (decoded_length < 0) {
             throw std::runtime_error("Failed to decode challenge data");
         }
-        
+
         decoded_data.resize(decoded_length);
         challenge_data = std::move(decoded_data);
     }
@@ -766,72 +788,72 @@ struct LeaveMessage : public MESSAGE {
     std::chrono::system_clock::time_point timestamp;
     std::vector<uint8_t> signature;
     std::string certificate_pem;
-    
+
     LeaveMessage() {
         this->type = LEAVE_NOTIFICATION;
     }
-    
+
     string serialize() const override {
         json j;
         j["type"] = type;
         j["srcAddr"] = srcAddr;
         j["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
             timestamp.time_since_epoch()).count();
-        
+
         if (!signature.empty()) {
             BIO* bio = BIO_new(BIO_s_mem());
             BIO* b64 = BIO_new(BIO_f_base64());
             BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
             bio = BIO_push(b64, bio);
-            
+
             BIO_write(bio, signature.data(), signature.size());
             BIO_flush(bio);
-            
+
             char* encoded_data;
             long data_len = BIO_get_mem_data(bio, &encoded_data);
             std::string encoded_sig(encoded_data, data_len);
-            
+
             BIO_free_all(bio);
             j["signature"] = encoded_sig;
         } else {
             j["signature"] = "";
         }
-        
+
         j["certificate_pem"] = certificate_pem;
-        
+
         return j.dump();
     }
-    
+
     void deserialize(json& j) override {
         type = j["type"];
         srcAddr = j["srcAddr"];
         timestamp = std::chrono::system_clock::time_point(
             std::chrono::milliseconds(j["timestamp"].get<int64_t>()));
         certificate_pem = j["certificate_pem"];
-        
+
         std::string encoded_sig = j["signature"].get<std::string>();
         if (!encoded_sig.empty()) {
-            encoded_sig.erase(std::remove_if(encoded_sig.begin(), encoded_sig.end(), 
+            encoded_sig.erase(std::remove_if(encoded_sig.begin(), encoded_sig.end(),
                 [](char c) { return std::isspace(c) || c == '\0'; }), encoded_sig.end());
-            
+
             switch (encoded_sig.length() % 4) {
                 case 2: encoded_sig += "=="; break;
                 case 3: encoded_sig += "="; break;
             }
-            
+
             BIO* bio = BIO_new_mem_buf(encoded_sig.data(), encoded_sig.size());
             BIO* b64 = BIO_new(BIO_f_base64());
             BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
             bio = BIO_push(b64, bio);
-            
+
             std::vector<uint8_t> decoded((encoded_sig.size() * 3) / 4);
             if (decoded.empty()) {
                 decoded.resize(1);
             }
-            
+
             int decoded_length = BIO_read(bio, decoded.data(), decoded.size());
             BIO_free_all(bio);
-            
+
             if (decoded_length > 0) {
                 decoded.resize(decoded_length);
                 signature = std::move(decoded);
@@ -843,11 +865,11 @@ struct LeaveMessage : public MESSAGE {
 struct JoinRequestMessage : public MESSAGE {
     std::string srcAddr;
     std::chrono::system_clock::time_point timestamp;
-    
+
     JoinRequestMessage() {
         this->type = JOIN_REQUEST;
     }
-    
+
     string serialize() const override {
         json j = json{
             {"type", this->type},
@@ -870,11 +892,11 @@ struct JoinResponseMessage : public MESSAGE {
     std::string srcAddr;
     std::vector<std::string> validNodeList;
     std::chrono::system_clock::time_point timestamp;
-    
+
     JoinResponseMessage() {
         this->type = JOIN_RESPONSE;
     }
-    
+
     string serialize() const override {
         json j = json{
             {"type", this->type},
